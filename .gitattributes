@@ -1,0 +1,7 @@
+# The host is Windows; force LF so bash, YAML and Terraform behave the same
+# in Git Bash and in Linux CI.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.gif binary

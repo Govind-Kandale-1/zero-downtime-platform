@@ -1,0 +1,12 @@
+# Local, machine-specific state (kubeconfig, tfstate password, runner creds, keys)
+.local/
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+crash.log
+# Build output
+app/bin/
+# Scratch output from evidence runs (curated logs are committed, tmp/ is not)
+evidence/**/tmp/
