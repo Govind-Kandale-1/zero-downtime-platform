@@ -6,6 +6,7 @@
 |---|---|
 | `lib/` | Shared helpers sourced by every script (see `lib/code-review.md`) |
 | `tests/` | Tests for the scripts themselves (see `tests/code-review.md`) |
+| `test-go.sh` | `unit` runs `go test ./...` in the pinned Go container. `integration` starts throwaway Postgres + Valkey containers on network `zdp-test`, waits for **TCP** readiness (the Postgres image's init phase only listens on a socket), then runs `go test -tags integration ./...` on that network. The containers are removed on exit. |
 
 Further entry points (`up.sh`, `down.sh`, `state-up.sh`, `runner-up.sh`, `gate.sh`, `bump-release.sh`, `restore-test.sh`, demos) are added by later build steps and listed here as they land.
 

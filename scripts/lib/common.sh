@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Shared helpers for every script in scripts/. Source it; do not execute it.
 
+# Resolved once at source time: BASH_SOURCE may be relative, and callers cd.
+_ZDP_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 repo_root() {
-  git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel
+  git -C "$_ZDP_LIB_DIR" rev-parse --show-toplevel
 }
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }

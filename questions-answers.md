@@ -19,6 +19,15 @@ Likely review questions, grouped by the brief's sections. Each entry has a short
 **A:** Public visibility is needed for review and for credential-free GitOps pulls. It doesn't grant reuse rights. The LICENSE limits use to evaluation during this interview process. GitHub's ToS still allows viewing and forking on GitHub itself.
 **Point to:** `LICENSE`, ADR-002.
 
+### Q: The brief says "black box, do not rewrite". Why is there application code in the repo?
+**A:** The brief describes the app but doesn't supply an image, so something has to run. The stand-in implements only the contract: port 8080, the three endpoints, a Redis-queue worker and startup migrations. Every result produced with it is labelled "stand-in". It proves the platform mechanisms (probes, draining, canaries, scaling, job accounting), not the real app's performance.
+**Follow-ups:** "What does it assume about the real app?" That it drains on SIGTERM, takes an advisory lock when migrating, can be given a separate migration URL, puts timestamps on jobs, and that jobs are idempotent. Each assumption has a mitigation in the README.
+**Point to:** `app/code-review.md`, ADR-005.
+
+### Q: Why Go for the stand-in?
+**A:** Resource budget. About 33 API pods plus about 60 workers have to fit in a ~9.7 GB Docker VM. A Go pod idles at around 15 MB and starts in milliseconds, which also shortens scale-up. The distroless image gives Trivy almost nothing to flag. Python would have been easier to read but would cost about 4× the memory per pod.
+**Point to:** ADR-005.
+
 ## 1. Cloud-agnostic infrastructure as code
 
 ### Q: Where exactly is the boundary between "provider" and "platform"?
@@ -61,6 +70,11 @@ Everything above that (Argo CD, Traefik, Rollouts, KEDA, the app chart) only con
 **A:** I assumed peak: λ = 5.56 jobs/s. With a 10 s mean job, Little's law gives L = λ × W ≈ 56 concurrent workers. Sizing uses the mean; the 60 s maximum sets the 90 s shutdown grace period so scale-in never kills a job. If it's the baseline, peak is ~83 jobs/s and ~830 workers, and capacity.md shows that case.
 **Follow-ups:** "Why not size for 60 s?" That gives ~333 workers, mostly idle. Throughput depends on the mean.
 **Point to:** ADR-024, `docs/capacity.md`.
+
+### Q: How does the stand-in model per-pod capacity? Why not burn CPU?
+**A:** Each pod has `MAX_INFLIGHT` slots (8). Each request holds a slot for a slept `WORK_LATENCY_MS` (40 ms) plus a DB lookup, so capacity is about 8 / 0.04 ≈ 100–200 req/s depending on DB time. Beyond that, requests *queue*, so latency rises like a real thread pool, and scaling is genuinely required to keep p95 under 400 ms. Burning CPU instead would tie CPU use to pod count, and the laptop would saturate before the platform did.
+**Follow-ups:** "So the 70 req/s target is invented?" No. It is 70% of the per-pod capacity *measured* with a k6 step test (Task 16).
+**Point to:** `app/internal/httpapi/code-review.md`, ADR-005.
 
 ## 7. Multi-deployment and tenancy
 *(added in later steps)*

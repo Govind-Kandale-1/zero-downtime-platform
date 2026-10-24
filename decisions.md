@@ -135,3 +135,23 @@ Date · Status · Label
 - *Sizing on the 60 s maximum (~333 workers):* wastes capacity, because throughput depends on the mean.
 
 **Consequences.** `docs/capacity.md` carries a sensitivity table (5/10/30/60 s means, both interpretations). If the real mean differs, only `worker.maxReplicas` and the KEDA `listLength` change.
+
+## ADR-005: Stand-in application in Go, contract-only, with a bounded-concurrency capacity model
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in)
+
+**Context.** The brief treats the application as a black box ("do not rewrite") but supplies no image. Something has to run so the platform can be exercised, and the 15x load test (about 33 API pods and about 60 workers) has to fit in a ~9.7 GB Docker VM on a laptop.
+
+**Decision.**
+- **Contract only.** A small Go module with one image and three binaries (`/api`, `/worker`, `/synthetic`). It implements only the black-box contract, plus two stand-in-only knobs.
+- **Capacity model.** `MAX_INFLIGHT` (8) is a queueing semaphore and `WORK_LATENCY_MS` (40) is a slept per-request delay. Together they give each pod a finite capacity (≈ `MAX_INFLIGHT / latency`, ~100 req/s), so overload shows up as rising latency, as with a real thread pool.
+- **Fault injection.** `FAULT_ERROR_RATE` is a compiled-in default with an env override, used by the bad-release demo.
+
+**Rejected alternatives.**
+- *Python/FastAPI:* most readable, but about 4× the memory per pod and slower start-up. That is a problem for both the laptop budget and the scale-up time.
+- *An existing demo app (e.g. podinfo):* it has the HTTP endpoints but no Postgres migrations and no Redis worker, so the migration and queue stories couldn't be shown.
+- *CPU-burn work per request:* it makes per-pod capacity CPU-bound, but CPU then grows with pod count × load. That would saturate the laptop long before 2,250 req/s and measure the laptop, not the platform.
+
+**Consequences.**
+- Every result obtained with it is labelled `RUN-LOCAL (stand-in)`.
+- Behaviours the stand-in guarantees but the real app might not are listed in the README as assumptions, each with a mitigation: SIGTERM draining, advisory-locked migrations, a separate migration URL, enqueue timestamps, idempotent jobs.
