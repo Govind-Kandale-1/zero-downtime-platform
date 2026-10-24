@@ -62,7 +62,25 @@ Everything above that (Argo CD, Traefik, Rollouts, KEDA, the app chart) only con
 *(added in later steps)*
 
 ## 5. Zero downtime
-*(added in later steps)*
+
+### Q: What happens to a job when a worker is killed mid-job?
+**A:** There are two cases.
+- **Graceful** (rollout, KEDA scale-in, drain): SIGTERM makes the worker stop claiming and finish the job in hand. The pod has 90 s of grace against a 60 s maximum job, so nothing is lost or duplicated.
+- **Ungraceful** (OOM, node loss, SIGKILL): the job is still in `jobs:processing:<pod>`, because claims are atomic moves, not pops. The pod's heartbeat key expires after 30 s, and a peer's reaper moves the job back to the head of the queue. The job is late, not lost.
+
+**Follow-ups:**
+- "What if a worker is alive but its heartbeat stalls?" Three missed beats (30 s) is the threshold. The worst case is a duplicate run, which is why jobs must be idempotent.
+- "Why does the heartbeat keep running after SIGTERM?" Otherwise a peer would reap the job the stopping worker is still finishing.
+
+**Point to:** `app/internal/worker/code-review.md`, ADR-006.
+
+### Q: Is job processing exactly-once?
+**A:** No, it's at-least-once, by design. A worker that finishes a job but dies before acknowledging it will have that job re-run. Exactly-once would need a dedupe store keyed by job id and transactional side effects. The honest platform answer is "make jobs idempotent". That is listed as an assumption about the black box.
+**Point to:** ADR-006.
+
+### Q: How do you prove no jobs were dropped during the load test?
+**A:** Three counters are updated atomically with each queue operation: `enqueued_total`, `done_total` and `failed_total`. After the queue drains, `enqueued = done + failed` must hold. A unit test asserts it with 3 workers and malformed jobs, and the 15x evidence run checks it on the real platform.
+**Point to:** `TestAccountingInvariant`, `evidence/03-load-15x/`.
 
 ## 6. Autoscaling and capacity
 
@@ -70,6 +88,10 @@ Everything above that (Argo CD, Traefik, Rollouts, KEDA, the app chart) only con
 **A:** I assumed peak: λ = 5.56 jobs/s. With a 10 s mean job, Little's law gives L = λ × W ≈ 56 concurrent workers. Sizing uses the mean; the 60 s maximum sets the 90 s shutdown grace period so scale-in never kills a job. If it's the baseline, peak is ~83 jobs/s and ~830 workers, and capacity.md shows that case.
 **Follow-ups:** "Why not size for 60 s?" That gives ~333 workers, mostly idle. Throughput depends on the mean.
 **Point to:** ADR-024, `docs/capacity.md`.
+
+### Q: How do you measure queue *age* when the worker is a black box?
+**A:** List length is always available from outside: redis_exporter reads `LLEN`, and that's what KEDA scales on. Age needs a timestamp inside each job. The stand-in puts `enqueued_at` in the payload and exports `queue_oldest_job_age_seconds` by reading the oldest item. For the real app, that's an assumption to confirm. If its payloads have no timestamp, you either add one at the producer or fall back to depth ÷ throughput as an estimated wait.
+**Point to:** `app/internal/queue/code-review.md`.
 
 ### Q: How does the stand-in model per-pod capacity? Why not burn CPU?
 **A:** Each pod has `MAX_INFLIGHT` slots (8). Each request holds a slot for a slept `WORK_LATENCY_MS` (40 ms) plus a DB lookup, so capacity is about 8 / 0.04 ≈ 100–200 req/s depending on DB time. Beyond that, requests *queue*, so latency rises like a real thread pool, and scaling is genuinely required to keep p95 under 400 ms. Burning CPU instead would tie CPU use to pod count, and the laptop would saturate before the platform did.

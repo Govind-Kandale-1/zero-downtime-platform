@@ -155,3 +155,25 @@ Date · Status · Label
 **Consequences.**
 - Every result obtained with it is labelled `RUN-LOCAL (stand-in)`.
 - Behaviours the stand-in guarantees but the real app might not are listed in the README as assumptions, each with a mitigation: SIGTERM draining, advisory-locked migrations, a separate migration URL, enqueue timestamps, idempotent jobs.
+
+## ADR-006: Reliable list queue (BLMOVE + heartbeat reaper), at-least-once delivery
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in)
+
+**Context.** The brief requires autoscaling "without dropping jobs" (jobs take up to 60 s) and worker draining during rollouts. A worker can be stopped by a rollout, by KEDA scale-in, by node drain, by OOM or by a crash. The first three send SIGTERM; the last two don't.
+
+**Decision.**
+- **Claims are atomic moves, not pops.** `BLMOVE jobs → jobs:processing:<pod>`, so a job is always in exactly one list (pending, processing or failed).
+- **Graceful stops.** On SIGTERM the worker stops claiming and finishes the job in hand. Its heartbeat keeps running until it exits, and `terminationGracePeriodSeconds: 90` exceeds the 60 s maximum job.
+- **Ungraceful stops.** Each worker keeps a heartbeat key with a 30 s TTL. A reaper (one leader via `SET NX EX`) moves the processing lists of dead workers back to the *head* of the queue.
+- **Accounting.** Counters (`enqueued_total`, `done_total`, `failed_total`) make "zero dropped jobs" provable.
+
+**Rejected alternatives.**
+- *Plain `BRPOP`:* simplest, but a crash between pop and completion loses the job silently.
+- *Redis Streams with consumer groups (`XREADGROUP` + `XAUTOCLAIM`):* the industry-standard version of the same idea. Rejected only because the brief fixes the black box to a *list*-style "Redis queue", and KEDA's Redis *Lists* scaler matches that. Streams would be the choice for a new system.
+- *KEDA ScaledJob (one Kubernetes Job per queue item):* never interrupts a job, but at 5.56 jobs/s it means 5.56 pod starts per second. Too much churn and too slow.
+- *Exactly-once:* needs a dedupe store keyed by job id plus transactional side effects. Out of scope; jobs must be idempotent instead.
+
+**Consequences.**
+- Delivery is **at-least-once**. A job finished just before a crash (before `Ack`) runs again, so real jobs must be idempotent. This is listed as an assumption about the black box.
+- After an ungraceful death, a job waits up to ~30 s (heartbeat TTL) plus up to 15 s (reaper interval) before it is retried.

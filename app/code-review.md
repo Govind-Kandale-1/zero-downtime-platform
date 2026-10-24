@@ -13,7 +13,10 @@ It adds two stand-in-only knobs: a capacity model (`MAX_INFLIGHT` / `WORK_LATENC
 | `cmd/api/` | API entry point: startup, migrations, readiness, graceful shutdown |
 | `internal/config/` | Environment → `Config`; the compiled-in fault default |
 | `internal/httpapi/` | Routes, queueing limiter, metrics, fault injection |
-| `internal/queue/` | Reliable list queue (enqueue now; claim/ack/reap arrive with the worker) |
+| `cmd/worker/` | Worker entry point: SIGTERM finishes the job in hand, then exits 0 |
+| `cmd/synthetic/` | Platform tooling: constant low traffic so canary analysis always has data |
+| `internal/queue/` | Reliable list queue: BLMOVE claims, ack/fail, heartbeats, reaper |
+| `internal/worker/` | Consumer loop and its stand-in-only metrics |
 | `internal/migrate/` | Advisory-locked, forward-only migration runner |
 | `migrations/` | Embedded SQL (`0001` creates and seeds `items`) |
 
