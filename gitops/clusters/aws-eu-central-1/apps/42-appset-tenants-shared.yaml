@@ -1,0 +1,53 @@
+# NOT RUN. Same as the local cluster, plus a region post-selector: a shared
+# tenant rides the shared prod stack in THIS region, so only tenants homed
+# here are routed here (residency by construction).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: tenants-shared
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  generators:
+    - git:
+        repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+        revision: main
+        files:
+          - path: tenants/*.yaml
+      # Post-selector: a field of the generator, not of `git`.
+      selector:
+        matchLabels:
+          tier: shared
+          region: eu-central-1
+  template:
+    metadata:
+      name: "tenant-{{.name}}"
+      labels:
+        zdp/tier: shared
+        zdp/tenant: "{{.name}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+        targetRevision: main
+        path: charts/tenant-route
+        helm:
+          releaseName: "tenant-{{.name}}"
+          valuesObject:
+            tenant:
+              name: "{{.name}}"
+              slo: "{{.slo}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: app-prod
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true

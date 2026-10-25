@@ -14,6 +14,8 @@ The local platform Applications re-pointed at `values/aws/`, plus `15-karpenter.
 | `14-metrics-server.yaml` | metrics-server (the HPA's CPU metrics) |
 | `15-karpenter.yaml` | Karpenter controller (AWS only) |
 | `20-kube-prometheus-stack.yaml` | Prometheus, Alertmanager and Grafana with `values/aws` (2 replicas, 15 d retention, gp3) |
-| `21-platform-config.yaml` | `gitops/platform/aws`: ClusterSecretStore, Karpenter NodePools, over-provisioning |
-| `40-appset-stacks.yaml` | one Application per env stack, with `backup.mode: managed`, `valkeyMetrics: false`, `dbMetrics: false` |
-| `41-appset-tenants-dedicated.yaml` | one Application per dedicated tenant whose `region` is eu-central-1 |
+| `21-platform-config.yaml` | `gitops/platform/aws`: ClusterSecretStore, Karpenter NodePools, gp3 StorageClass, over-provisioning |
+| `30-synthetic-traffic.yaml` | the same synthetic traffic as local (ADR-016): canary analysis and gates always have data |
+| `40-appset-stacks.yaml` | one Application per env stack, with `backup.mode: managed`, `valkeyMetrics: false`, `dbMetrics: false`, `queue.tls: true`, and workers on the spot pool |
+| `41-appset-tenants-dedicated.yaml` | one Application per dedicated tenant whose `region` is eu-central-1, with its own node pool (`nodePool.enabled`) and `queue.tls: true` |
+| `42-appset-tenants-shared.yaml` | one route + SLO rules per shared tenant homed in eu-central-1, on the shared prod stack |

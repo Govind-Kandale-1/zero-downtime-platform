@@ -49,6 +49,13 @@ spec:
               valkeyMetrics: false
               dbMetrics: false # RDS metrics come from CloudWatch
               backup: { mode: managed }
+              queue: { tls: true } # ElastiCache is rediss://
+              # Queue workers run on the spot pool: draining + the reaper make an
+              # interruption a requeue, not a lost job (ADR-006).
+              worker:
+                nodeSelector: { zdp/pool: workers-spot }
+                tolerations:
+                  - { key: zdp/spot, operator: Equal, value: "true", effect: NoSchedule }
               image:
                 repository: "{{.image.repository}}"
                 digest: "{{.image.digest}}"

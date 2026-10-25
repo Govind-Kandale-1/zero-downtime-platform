@@ -62,7 +62,8 @@ spec:
             image:
               repository: "{{.image.repository}}"
               digest: "{{.image.digest}}"
-            # Local laptop caps (labelled); production uses chart defaults.
+            queue: { tls: true } # ElastiCache is rediss://
+            nodePool: { enabled: true } # the tenant's own tainted Karpenter pool (ADR-017)
             valkeyMetrics: false # queue metrics come from CloudWatch on AWS
             dbMetrics: false # RDS metrics come from CloudWatch
             backup: { mode: managed } # RDS automated backups + PITR

@@ -62,23 +62,6 @@ spec:
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 2m
----
-# Example dedicated-tenant pool (ADR-017): tenant pods tolerate the taint and
-# select the label; nobody else lands here.
-apiVersion: karpenter.sh/v1
-kind: NodePool
-metadata:
-  name: tenant-acme
-spec:
-  template:
-    metadata:
-      labels: { zdp/tenant: acme }
-    spec:
-      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: default }
-      taints:
-        - { key: zdp/tenant, value: acme, effect: NoSchedule }
-      requirements:
-        - { key: karpenter.sh/capacity-type, operator: In, values: [on-demand] }
-        - { key: karpenter.k8s.aws/instance-category, operator: In, values: [c, m] }
-  limits:
-    cpu: "40"
+# Dedicated-tenant pools are not listed here: charts/app renders one per
+# dedicated tenant (nodePool.enabled in the AWS tenants ApplicationSet), tainted
+# zdp/tenant=<name>, with the tenant's pods pinned to it (ADR-017).

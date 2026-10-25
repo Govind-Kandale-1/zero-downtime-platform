@@ -10,6 +10,7 @@ Wraps `terraform-aws-modules/eks` 21.29.0 and its `karpenter` submodule (ADR-022
 | Node group `system` | 2–3 × `m7i.large`, labelled `zdp/pool=system`. It holds CoreDNS, Karpenter, Argo CD and the other controllers. |
 | Add-ons | CoreDNS, kube-proxy, vpc-cni **with its network-policy agent enabled** (otherwise EKS accepts NetworkPolicy objects but enforces none, and the chart's default-deny would be void), **EKS Pod Identity agent** (credentials for ESO, Karpenter and the EBS CSI driver without IRSA annotations), EBS CSI driver |
 | Karpenter | IAM role, SQS interruption queue and Pod Identity association. NodePools are platform manifests (`gitops/platform/aws/karpenter.yaml`). |
+| Pod Identity roles | **External Secrets**: read-only on `stacks/*` secrets, KMS decrypt only via Secrets Manager. **EBS CSI driver**: the AWS-managed `AmazonEBSCSIDriverPolicy`. Both bound with `aws_eks_pod_identity_association` (the independent review found only Karpenter had one, so ESO couldn't have read a secret and no volume could have been created) |
 | Access | `enable_cluster_creator_admin_permissions`; secrets envelope-encrypted with the module's KMS key |
 
 **Key decisions:**
