@@ -29,6 +29,13 @@ test_eu_tenant_in_london_denied if {
 	contains(msg, "EU residency")
 }
 
+test_eu_tenant_in_zurich_denied if {
+	# eu-central-2 is Zurich: Switzerland is not in the EU either.
+	t := object.union(acme, {"region": "eu-central-2"})
+	some msg in deny with input as file("tenants/acme.yaml", t)
+	contains(msg, "EU residency")
+}
+
 test_dedicated_without_ring_denied if {
 	t := object.remove(acme, ["ring"])
 	some msg in deny with input as file("tenants/acme.yaml", t)
