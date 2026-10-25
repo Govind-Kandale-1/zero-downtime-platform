@@ -17,12 +17,12 @@ Likely review questions, grouped by the brief's sections. Each entry has a short
 
 ### Q: Why is a public repo "all rights reserved"?
 **A:** Public visibility is needed for review and for credential-free GitOps pulls. It doesn't grant reuse rights. The LICENSE limits use to evaluation during this interview process. GitHub's ToS still allows viewing and forking on GitHub itself.
-**Point to:** `LICENSE`, ADR-002.
+**Point to:** `LICENSE`.
 
 ### Q: The brief says "black box, do not rewrite". Why is there application code in the repo?
 **A:** The brief describes the app but doesn't supply an image, so something has to run. The stand-in implements only the contract: port 8080, the three endpoints, a Redis-queue worker and startup migrations. Every result produced with it is labelled "stand-in". It proves the platform mechanisms (probes, draining, canaries, scaling, job accounting), not the real app's performance.
 **Follow-ups:** "What does it assume about the real app?" That it drains on SIGTERM, takes an advisory lock when migrating, can be given a separate migration URL, puts timestamps on jobs, and that jobs are idempotent. Each assumption has a mitigation in the README.
-**Point to:** `app/code-review.md`, ADR-005.
+**Point to:** `app/`, ADR-005.
 
 ### Q: Why Go for the stand-in?
 **A:** Resource budget. Up to 21 API pods (calibrated; the design-time estimate was 33) plus up to 60 workers have to fit in a ~9.7 GB Docker VM. A Go pod idles at around 15 MB and starts in milliseconds, which also shortens scale-up. The distroless image gives Trivy almost nothing to flag. Python would have been easier to read but would cost about 4× the memory per pod.
@@ -39,12 +39,12 @@ Likely review questions, grouped by the brief's sections. Each entry has a short
 
 Everything above that (Argo CD, Traefik, Rollouts, KEDA, the app chart) only consumes those names. On kind the contract is met by CloudNativePG, Valkey and OpenBao; on AWS by RDS, ElastiCache and Secrets Manager.
 **Follow-ups:** "What leaks through?" LB annotations, IAM, node autoscaling, backup mechanics and the state backend type (`docs/non-portable.md`).
-**Point to:** `infra/code-review.md`, ADR-003.
+**Point to:** [the provider contract](docs/architecture/where-things-live.md#the-provider-contract), ADR-003.
 
 ### Q: Why does every stack have two database URLs?
 **A:** Runtime queries go through PgBouncer in transaction mode, which multiplexes hundreds of client connections onto about 40 Postgres backends. Migrations go directly to Postgres. In transaction mode PgBouncer can give each transaction a different backend, so a session-level advisory lock (which Flyway, golang-migrate and Prisma use) can be taken on one backend and "released" on another. You end up with a stuck lock, or two pods migrating at once. A direct URL for migrations avoids that.
 **Follow-ups:** "What if the black box accepts only one URL?" Point it at a session-mode pool, or direct, and accept less multiplexing. Or migrate from a pre-sync Job if the app supports a migrate-only mode.
-**Point to:** ADR-007, `app/internal/migrate/code-review.md`.
+**Point to:** ADR-007, `app/internal/migrate/migrate.go`.
 
 ### Q: Why Valkey and not Redis?
 **A:** Licensing. Redis moved to source-available licences in 2024; Valkey is the BSD-licensed Linux Foundation fork, compatible with the same protocol and clients. AWS offers ElastiCache for Valkey at about 20% less than Redis OSS. Nothing in the app, KEDA or the exporter had to change.
@@ -73,11 +73,11 @@ Argo CD then syncs `gitops/clusters/aws-eu-central-1`, which uses the same chart
 - DNS and TLS certificates for real hostnames.
 
 None of that is in the platform or app layers.
-**Point to:** `infra/live/aws/code-review.md`, `evidence/08-aws-static/README.md`.
+**Point to:** `infra/live/aws/`, `evidence/08-aws-static/README.md`.
 
 ### Q: Why EKS Pod Identity over IRSA?
 **A:** Both give pods short-lived AWS credentials. IRSA needs an OIDC provider plus a trust policy per role that names the namespace and service account, and annotations on the service account. Pod Identity is one association resource (cluster + namespace + service account → role), managed in Terraform, with no per-role OIDC conditions. ESO, Karpenter and the EBS CSI driver all use it here.
-**Point to:** `infra/modules/aws/eks/code-review.md`, ADR-022.
+**Point to:** `infra/modules/aws/eks/main.tf`, ADR-022.
 
 ### Q: Why not Crossplane, so everything is Kubernetes-native?
 **A:** Crossplane needs a cluster before it can create one, which is a bootstrap problem. It also adds a control plane to run and debug. Terraform is the common denominator interviewers and operators know, and the contract keeps it swappable.
@@ -87,7 +87,7 @@ None of that is in the platform or app layers.
 
 ### Q: How do you run the same tools on a Windows laptop and in Linux CI?
 **A:** Every tool is pinned in `config/versions.env`. Locally, `scripts/lib/tools.sh` runs the pinned container when the binary isn't installed, so versions match CI exactly. Line endings are forced to LF and checked in CI, because CRLF silently breaks bash, YAML and Terraform.
-**Point to:** ADR-021, `scripts/lib/code-review.md`.
+**Point to:** ADR-021, `scripts/lib/tools.sh`.
 
 ### Q: Where is Terraform state, and how is it locked?
 **A:**
@@ -95,7 +95,7 @@ None of that is in the platform or app layers.
 - **On AWS:** an S3 bucket with versioning and KMS encryption, using S3's native lockfile, so no DynamoDB table is needed since Terraform 1.10/1.11.
 
 **Follow-ups:** "Prove it's remote." `select name from local_10_cluster.states` returns the state row, and there's no `terraform.tfstate` in the repo.
-**Point to:** ADR-004, `infra/live/local/code-review.md`.
+**Point to:** ADR-004, `infra/live/local/`, `scripts/state-up.sh`.
 
 ### Q: What's the chicken-and-egg problem with remote state, and how do you solve it?
 **A:** The bucket (or database) that holds state has to exist before any root can use it, so whatever creates it can't keep its own state there. The answer is a tiny bootstrap step:
@@ -118,7 +118,7 @@ The same logic is why the Kubernetes backend was rejected: state would live insi
 
 All actions are pinned by commit SHA. I showed a PR adding an EU tenant in us-east-1 being blocked by policy-test.
 **Follow-ups:** "Did CI ever catch something the laptop didn't?" Yes. promtool passed on Windows but failed on Linux because of a 0700 temp directory and a non-root container, so running on two platforms paid off.
-**Point to:** `.github/code-review.md`, `evidence/00-ci/README.md`.
+**Point to:** `.github/workflows/ci.yml`, `evidence/00-ci/README.md`.
 
 ### Q: "Build once." Prove production runs the exact artifact you tested in dev.
 **A:**
@@ -138,7 +138,7 @@ Promotion copies the digest file to file. There's no rebuild and no retag.
 - The runner's Kubernetes identity is read-only. The bring-up script proves it can't delete anything.
 
 In the cloud this becomes Actions Runner Controller inside each cluster.
-**Point to:** ADR-015, `scripts/runner/code-review.md`.
+**Point to:** ADR-015, `scripts/runner-up.sh`, `scripts/runner/`.
 
 ### Q: What happens when GitHub is down?
 **A:** Nothing new deploys: no builds, no promotions, and no Git for Argo CD to pull. Running stacks are unaffected. Argo CD keeps the last-synced state, and KEDA and Rollouts are in-cluster. Images are already on the nodes; a node replacement would need GHCR, which is why a regional pull-through cache (ECR) is on the roadmap.
@@ -177,7 +177,7 @@ The cost is that the pipeline can't directly "see" the deployment. My gates read
 ### Q: Why is there synthetic traffic? Doesn't it distort your SLIs?
 **A:** Argo Rollouts treats "no data" as inconclusive and pauses the rollout. Dev, staging and the tenant stacks get no user traffic locally, so without it every canary would stall. A tiny generator sends 10 req/s per stack through the real ingress. Requests carry `X-Synthetic: 1`, so user-facing dashboards can exclude them, while canary analysis deliberately includes them. It also works as a black-box probe: if synthetic requests fail, the stack is broken whether or not anyone noticed.
 **Follow-ups:** "Is 1 req/s to a 10% canary enough?" It's enough to catch a gross failure (the demo bug fails 30% of requests) within a minute, not a subtle regression. That's what production traffic, longer steps and a minimum-request-count guard are for.
-**Point to:** ADR-016, `app/cmd/synthetic/code-review.md`.
+**Point to:** ADR-016, `gitops/platform/synthetic-traffic/deployment.yaml`, `app/cmd/synthetic/`.
 
 ### Q: How is drift handled?
 **A:** At two layers:
@@ -198,7 +198,7 @@ There is no recorded evidence of a clean `plan` run, so this answer claims none.
 - "What if a worker is alive but its heartbeat stalls?" Three missed beats (30 s) is the threshold. The worst case is a duplicate run, which is why jobs must be idempotent.
 - "Why does the heartbeat keep running after SIGTERM?" Otherwise a peer would reap the job the stopping worker is still finishing.
 
-**Point to:** `app/internal/worker/code-review.md`, ADR-006.
+**Point to:** `app/internal/worker/`, ADR-006.
 
 ### Q: Walk me through a zero-downtime API pod shutdown.
 **A:**
@@ -209,7 +209,7 @@ There is no recorded evidence of a clean `plan` run, so this answer claims none.
 
 A PDB limits voluntary disruptions to one pod at a time, and topology spread keeps replicas on different nodes.
 **Follow-ups:** "Why a native sleep hook?" The image is distroless, with no shell, so `exec: sleep` is impossible. Kubernetes 1.30+ has `preStop.sleep`.
-**Point to:** `charts/app/templates/api-rollout.yaml`, `app/cmd/api/code-review.md`.
+**Point to:** `charts/app/templates/api-rollout.yaml`, `app/cmd/api/main.go`.
 
 ### Q: What if the real black-box app doesn't drain on SIGTERM?
 **A:** Then the platform limits the damage, but it can't prevent it.
@@ -286,12 +286,12 @@ The analysis also found something the laptop didn't cause. **Reactive scaling ne
 
 ### Q: How do you measure queue *age* when the worker is a black box?
 **A:** List length is always available from outside: redis_exporter reads `LLEN`, and that's what KEDA scales on. Age needs a timestamp inside each job. The stand-in puts `enqueued_at` in the payload and exports `queue_oldest_job_age_seconds` by reading the oldest item. For the real app, that's an assumption to confirm. If its payloads have no timestamp, you either add one at the producer or fall back to depth ÷ throughput as an estimated wait.
-**Point to:** `app/internal/queue/code-review.md`.
+**Point to:** `app/internal/queue/`.
 
 ### Q: How does the stand-in model per-pod capacity? Why not burn CPU?
 **A:** Each pod has `MAX_INFLIGHT` slots (8). Each request holds a slot for a slept `WORK_LATENCY_MS` (40 ms) plus a DB lookup, so capacity is about 8 / 0.04 ≈ 100–200 req/s depending on DB time. Beyond that, requests *queue*, so latency rises like a real thread pool, and scaling is genuinely required to keep p95 under 400 ms. Burning CPU instead would tie CPU use to pod count, and the laptop would saturate before the platform did.
 **Follow-ups:** "So the per-pod target is invented?" No. It is **126 req/s**, 70% of the per-pod capacity of about 180 req/s *measured* with a k6 step test (Task 16). 70 was the placeholder before calibration.
-**Point to:** `app/internal/httpapi/code-review.md`, ADR-005.
+**Point to:** `app/internal/httpapi/server.go`, ADR-005.
 
 ## 7. Multi-deployment and tenancy
 
@@ -302,11 +302,11 @@ The analysis also found something the laptop didn't cause. **Reactive scaling ne
 - **Apply time:** Terraform takes each tenant's region from that same file, so a tenant can't be validated against one region and deployed to another.
 - **On AWS:** backups and snapshot copies stay inside the residency zone, and an SCP denies non-EU regions to EU accounts. These are designed but not run.
 
-**Point to:** `policy/code-review.md`, ADR-017.
+**Point to:** `policy/tenants.rego`, ADR-017.
 
 ### Q: How do you get per-tenant visibility on a shared black-box app?
 **A:** At the ingress. Each shared tenant gets its own host, so its own Traefik router, and Traefik labels metrics per router. That gives per-tenant request rate, error rate and latency without the app knowing tenants exist. Dedicated tenants have their own namespace, so every metric is per tenant by definition.
-**Point to:** `charts/tenant-route/code-review.md`.
+**Point to:** `charts/tenant-route/`.
 
 ### Q: Dedicated tenant: namespace or cluster?
 **A:** By default, a dedicated namespace plus dedicated databases and cache (plus a tainted node pool on AWS) on a shared regional cluster. A cluster per tenant gives the strongest isolation but adds a $73/month control plane plus system nodes, a separate upgrade cycle and a separate Argo CD per tenant. Under the $9k budget that caps the fleet at a few tenants. I'd offer cluster-per-tenant only when a contract requires it.
@@ -396,7 +396,7 @@ What I wouldn't cut: per-tenant data services for dedicated tenants. That isolat
 **Point to:** ADR-020 (revised), commit `c73cf42`.
 
 ### Q: How do I know a document isn't overclaiming?
-**A:** Three mechanisms. Every evidence README and code review carries a label (RUN-LOCAL, NOT RUN, DESCRIBED). `scripts/tests/docs_test.sh` fails the build if an evidence README has no label, a code review names a file that doesn't exist, or the coverage table is missing an item. And the evidence keeps the failures: three 15x attempts, a first gate attempt that hung for 15 minutes, the backup stall.
+**A:** Three mechanisms. Every evidence README, doc and runbook carries a label (RUN-LOCAL, NOT RUN, DESCRIBED). `scripts/tests/docs_test.sh` fails the build if one has no label, a doc a page or alert links to is missing, or the coverage table is missing an item. And the evidence keeps the failures: three 15x attempts, a first gate attempt that hung for 15 minutes, the backup stall.
 **Point to:** `scripts/tests/docs_test.sh`, `evidence/03-load-15x/README.md`.
 
 ## 11. Uncomfortable questions

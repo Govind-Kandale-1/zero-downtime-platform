@@ -12,3 +12,7 @@ app/bin/
 evidence/**/tmp/
 # Agent scratch space (plan ledger lives in .superpowers/sdd, self-ignored)
 .superpowers/tmp/
+
+# Per-folder code reviews are the author's local study notes, not part of the
+# submission (owner decision, 2026-10-26): kept on disk, never committed.
+code-review.md

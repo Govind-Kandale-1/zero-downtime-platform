@@ -1,5 +1,5 @@
 # Dedicated tenant: own namespace, Postgres, PgBouncer, Valkey and app release.
-# Onboarding is one reviewed PR adding a file like this (tenants/code-review.md).
+# Onboarding is one reviewed PR adding a file like this (docs/architecture/tenancy.md).
 name: acme
 tier: dedicated
 residency: eu

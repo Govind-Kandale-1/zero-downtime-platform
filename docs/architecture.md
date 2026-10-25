@@ -1,6 +1,6 @@
 # Architecture
 
-**Labels:** RUN-LOCAL (executed on kind) · RUN-LOCAL (stand-in) (executed against the stand-in app) · NOT RUN (written and statically validated) · DESCRIBED (design only). Detail lives in `decisions.md` (ADRs), `docs/capacity.md` and the evidence folders.
+**Labels:** RUN-LOCAL (executed on kind) · RUN-LOCAL (stand-in) (executed against the stand-in app) · NOT RUN (written and statically validated) · DESCRIBED (design only). Detail lives in `decisions.md` (ADRs), `docs/capacity.md` and the evidence folders. For how each component works and where it lives, see [docs/architecture/](architecture/README.md).
 
 ## 1. Summary
 

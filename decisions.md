@@ -40,20 +40,6 @@ Date · Status · Label
 
 **Consequences.** The "two targets" requirement is only *partially* met, and this is stated openly in the README. The portability claim rests on two things: (a) the provider contract, and (b) a complete second implementation that compiles and passes static analysis. The roadmap's first item is to run the AWS target.
 
-## ADR-002: Proprietary, evaluation-only licence
-
-2026-10-25 · Accepted · Label: n/a
-
-**Context.** The repository is public so that reviewers can access it and so that GitOps can pull without credentials (ADR-020). Public is not the same as open source.
-
-**Decision.** The root `LICENSE` contains the submitter's exact notice: all rights reserved; for evaluation during the interview process with immverse only; no commercial use, deployment or modification for production without written permission. The text is never edited, and no OSI licence is added.
-
-**Rejected alternatives.**
-- *MIT or Apache-2.0:* they grant reuse rights the author does not want to give.
-- *No licence file:* legally "all rights reserved" by default, but ambiguous to readers. An explicit notice states the intended use.
-
-**Consequences.** GitHub's Terms of Service still let anyone view and fork a public repo on GitHub; the licence forbids any use beyond that. `gh repo create` is run without `--license`.
-
 ## ADR-003: Three-layer infrastructure with an explicit provider contract
 
 2026-10-25 · Accepted · Label: RUN-LOCAL / NOT RUN (AWS)
@@ -74,7 +60,7 @@ Date · Status · Label
 - *Crossplane for all infrastructure:* needs a running cluster before it can build one (bootstrap problem), and adds a control plane to learn and operate within the time box.
 - *Helm/Kubernetes only:* cannot create networks, managed databases or IAM.
 
-**Consequences.** Adding a cloud (e.g. for the change request) means writing one new provider implementation; nothing above it changes. The contract is listed in `infra/code-review.md`, and the leaks are listed in `docs/non-portable.md`.
+**Consequences.** Adding a cloud (e.g. for the change request) means writing one new provider implementation; nothing above it changes. The contract is listed in [docs/architecture/where-things-live.md](docs/architecture/where-things-live.md#the-provider-contract), and the leaks are listed in `docs/non-portable.md`.
 
 ## ADR-020: Public repository; `main` protected by a ruleset with a deploy-key bypass for release commits
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Proves the provider contract (infra/code-review.md) for every stack:
+# Proves the provider contract (docs/architecture/where-things-live.md) for every stack:
 # Postgres healthy, PgBouncer available and usable, Valkey ready with AOF on,
 # and the three connection URLs present in the secrets manager.
 set -euo pipefail

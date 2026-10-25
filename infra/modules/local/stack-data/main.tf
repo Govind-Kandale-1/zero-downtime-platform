@@ -1,6 +1,6 @@
 # One stack's data services: the local implementation of provider-contract
 # item 2 (Postgres + PgBouncer + Valkey) and item 3 (connection URLs in the
-# secrets manager). See infra/code-review.md.
+# secrets manager). See docs/architecture/where-things-live.md.
 
 locals {
   name = var.stack.name
