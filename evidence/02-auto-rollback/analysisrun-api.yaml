@@ -1,0 +1,134 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisRun
+metadata:
+  annotations:
+    rollout.argoproj.io/revision: "2"
+  creationTimestamp: "2026-10-25T13:34:31Z"
+  generation: 5
+  labels:
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/name: api
+    rollout-type: Background
+    rollouts-pod-template-hash: 8488c785ff
+  name: api-8488c785ff-2
+  namespace: app-dev
+  ownerReferences:
+  - apiVersion: argoproj.io/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Rollout
+    name: api
+    uid: 997343e8-9b1a-4a86-ae87-d8986e086db2
+  resourceVersion: "108694"
+  uid: 4e914a54-27af-4bf2-98cc-e54ac2e62e86
+spec:
+  metrics:
+  - failureCondition: "false"
+    initialDelay: 1m
+    interval: 1m
+    name: canary-request-count
+    provider:
+      prometheus:
+        address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+        authentication:
+          oauth2: {}
+          sigv4: {}
+        query: |
+          sum(increase(traefik_service_requests_total{service=~"app-dev-api-canary-.*"}[1m]))
+    successCondition: len(result) > 0 && result[0] >= 20
+  - failureCondition: len(result) > 0 && result[0] < 0.99
+    failureLimit: 1
+    initialDelay: 1m
+    interval: 1m
+    name: canary-success-rate
+    provider:
+      prometheus:
+        address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+        authentication:
+          oauth2: {}
+          sigv4: {}
+        query: |
+          sum(rate(traefik_service_requests_total{service=~"app-dev-api-canary-.*",code!~"5.."}[1m]))
+          /
+          sum(rate(traefik_service_requests_total{service=~"app-dev-api-canary-.*"}[1m]))
+    successCondition: len(result) > 0 && result[0] >= 0.99
+  - failureCondition: len(result) > 0 && result[0] > 0.4
+    failureLimit: 1
+    initialDelay: 1m
+    interval: 1m
+    name: canary-p95-latency
+    provider:
+      prometheus:
+        address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+        authentication:
+          oauth2: {}
+          sigv4: {}
+        query: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service=~"app-dev-api-canary-.*"}[1m])))
+    successCondition: len(result) > 0 && result[0] <= 0.4
+status:
+  completedAt: "2026-10-25T13:36:31Z"
+  dryRunSummary: {}
+  message: Metric "canary-success-rate" assessed Failed due to failed (2) > failureLimit
+    (1)
+  metricResults:
+  - consecutiveSuccess: 2
+    count: 2
+    measurements:
+    - finishedAt: "2026-10-25T13:35:31Z"
+      phase: Successful
+      startedAt: "2026-10-25T13:35:31Z"
+      value: '[0.048388730367691306]'
+    - finishedAt: "2026-10-25T13:36:31Z"
+      phase: Successful
+      startedAt: "2026-10-25T13:36:31Z"
+      value: '[0.0475]'
+    metadata:
+      ResolvedPrometheusQuery: |
+        histogram_quantile(0.95,
+          sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service=~"app-dev-api-canary-.*"}[1m])))
+    name: canary-p95-latency
+    phase: Successful
+    successful: 2
+  - consecutiveSuccess: 2
+    count: 2
+    measurements:
+    - finishedAt: "2026-10-25T13:35:31Z"
+      phase: Successful
+      startedAt: "2026-10-25T13:35:31Z"
+      value: '[54.448031652094166]'
+    - finishedAt: "2026-10-25T13:36:31Z"
+      phase: Successful
+      startedAt: "2026-10-25T13:36:31Z"
+      value: '[152.01013400893393]'
+    metadata:
+      ResolvedPrometheusQuery: |
+        sum(increase(traefik_service_requests_total{service=~"app-dev-api-canary-.*"}[1m]))
+    name: canary-request-count
+    phase: Successful
+    successful: 2
+  - count: 2
+    failed: 2
+    measurements:
+    - finishedAt: "2026-10-25T13:35:31Z"
+      phase: Failed
+      startedAt: "2026-10-25T13:35:31Z"
+      value: '[0.7095191812337942]'
+    - finishedAt: "2026-10-25T13:36:31Z"
+      phase: Failed
+      startedAt: "2026-10-25T13:36:31Z"
+      value: '[0.7280701754385965]'
+    metadata:
+      ResolvedPrometheusQuery: |
+        sum(rate(traefik_service_requests_total{service=~"app-dev-api-canary-.*",code!~"5.."}[1m]))
+        /
+        sum(rate(traefik_service_requests_total{service=~"app-dev-api-canary-.*"}[1m]))
+    name: canary-success-rate
+    phase: Failed
+  phase: Failed
+  runSummary:
+    count: 3
+    failed: 1
+    successful: 2
+  startedAt: "2026-10-25T13:34:31Z"

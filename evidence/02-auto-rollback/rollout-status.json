@@ -1,0 +1,8 @@
+{
+  "phase": "Degraded",
+  "message": "RolloutAborted: Rollout aborted update to revision 2: Background analysis phase error/failed: Metric \"canary-success-rate\" assessed Failed due to failed (2) > failureLimit (1)",
+  "abort": true,
+  "abortedAt": "2026-10-25T13:36:31Z",
+  "stableRS": "5c784c986c",
+  "currentPodHash": "8488c785ff"
+}

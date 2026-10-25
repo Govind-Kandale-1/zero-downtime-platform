@@ -1,0 +1,4 @@
+AnalysisRun api-8488c785ff-2: Failed - Metric "canary-success-rate" assessed Failed due to failed (2) > failureLimit (1)
+  canary-p95-latency: Successful (successful=2 failed=0 inconclusive=0) values=[0.048388730367691306] | [0.0475]
+  canary-request-count: Successful (successful=2 failed=0 inconclusive=0) values=[54.448031652094166] | [152.01013400893393]
+  canary-success-rate: Failed (successful=0 failed=2 inconclusive=0) values=[0.7095191812337942] | [0.7280701754385965]

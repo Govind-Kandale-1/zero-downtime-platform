@@ -1,0 +1,2 @@
+[13:34:25] gate dev: expecting chart 0.1.4, image 774afd14b9e6, stacks: dev
+GATE FAIL dev/dev: Application not Synced/Healthy: sync=Synced health=Degraded revisions=0.1.4,59c73a738c53b017448b2eca9277e83238418341 (want chart 0.1.4)

@@ -25,6 +25,10 @@ case "$args" in
     sync=Synced; health=Healthy
     [ "$SCENARIO" = never-healthy ] && { sync=OutOfSync; health=Progressing; }
     [ "$SCENARIO" = aborted ] && health=Degraded # an aborted canary leaves the app Degraded
+    if [ "$SCENARIO" = stale-abort ]; then
+      n=$(cat "$STATE/app-calls" 2>/dev/null || echo 0); echo $((n + 1)) > "$STATE/app-calls"
+      [ "$n" -lt 2 ] && { sync=OutOfSync; health=Degraded; }
+    fi
     if [ "$SCENARIO" = transient-degraded ]; then
       # Degraded for the first two polls (a new stack converging), then Healthy.
       n=$(cat "$STATE/app-calls" 2>/dev/null || echo 0); echo $((n + 1)) > "$STATE/app-calls"
@@ -32,7 +36,16 @@ case "$args" in
     fi
     printf '{"status":{"sync":{"status":"%s","revisions":["0.1.42","abc123"]},"health":{"status":"%s"}}}\n' "$sync" "$health" ;;
   *"get rollout"*)
-    if [ "$SCENARIO" = aborted ]; then
+    if [ "$SCENARIO" = stale-abort ]; then
+      # The PREVIOUS release's abort is still on the Rollout until Argo CD syncs
+      # the new digest; after a few polls the new release rolls out healthy.
+      n=$(cat "$STATE/ro-calls" 2>/dev/null || echo 0); echo $((n + 1)) > "$STATE/ro-calls"
+      if [ "$n" -lt 4 ]; then
+        printf '{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/x/y@%s"}]}}},"status":{"phase":"Degraded","abort":true,"stableRS":"h1","currentPodHash":"h0"}}\n' "$OTHER_DIGEST"
+      else
+        printf '{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/x/y@%s"}]}}},"status":{"phase":"Healthy","stableRS":"h2","currentPodHash":"h2"}}\n' "$GOOD_DIGEST"
+      fi
+    elif [ "$SCENARIO" = aborted ]; then
       printf '{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/x/y@%s"}]}}},"status":{"phase":"Degraded","abort":true,"stableRS":"h1","currentPodHash":"h2"}}\n' "$digest"
     else
       printf '{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/x/y@%s"}]}}},"status":{"phase":"Healthy","stableRS":"h1","currentPodHash":"h1"}}\n' "$digest"
@@ -81,6 +94,10 @@ out=$(run_gate aborted 60) && rc=0 || rc=$?
 took=$(( $(date +%s) - start ))
 { [ "$rc" != 0 ] && grep -q 'aborted' <<< "$out" && [ "$took" -lt 30 ]; } \
   && pass "an aborted canary fails fast (${took}s, not the 60s timeout)" || fail "aborted: rc=$rc took=${took}s out=$out"
+
+out=$(run_gate stale-abort) && rc=0 || rc=$?
+[ "$rc" = 0 ] && grep -q 'GATE PASS dev/dev' <<< "$out" \
+  && pass "a previous release's abort is ignored until the new digest is live" || fail "stale-abort: rc=$rc out=$out"
 
 out=$(run_gate wrong-digest) && rc=0 || rc=$?
 [ "$rc" != 0 ] && grep -q 'digest mismatch' <<< "$out" && pass "wrong digest is rejected" || fail "wrong-digest: rc=$rc out=$out"

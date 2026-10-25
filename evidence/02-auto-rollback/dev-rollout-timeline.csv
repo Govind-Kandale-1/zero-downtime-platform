@@ -1,0 +1,47 @@
+time,phase,step,setWeight,abort,stable_rs,canary_rs,traefik_weights,analysis_runs
+13:32:01,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:32:10,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:32:18,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:32:25,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:32:35,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:32:42,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:32:50,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:32:57,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:05,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:13,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:21,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:29,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:36,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:44,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:52,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:33:59,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:34:07,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:34:17,Healthy,6,0,,5c784c986c,5c784c986c,api-stable=100 api-canary=0 ,
+13:34:25,Progressing,0,0,,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,
+13:34:33,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:34:41,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:34:48,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:34:56,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:35:04,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:35:12,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:35:20,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:35:28,Paused,1,10,,5c784c986c,8488c785ff,api-stable=90 api-canary=10 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:35:37,Paused,3,25,,5c784c986c,8488c785ff,api-stable=75 api-canary=25 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:35:45,Paused,3,25,,5c784c986c,8488c785ff,api-stable=75 api-canary=25 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:35:53,Paused,3,25,,5c784c986c,8488c785ff,api-stable=75 api-canary=25 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:36:00,Paused,3,25,,5c784c986c,8488c785ff,api-stable=75 api-canary=25 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:36:08,Paused,3,25,,5c784c986c,8488c785ff,api-stable=75 api-canary=25 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:36:16,Paused,3,25,,5c784c986c,8488c785ff,api-stable=75 api-canary=25 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:36:25,Paused,3,25,,5c784c986c,8488c785ff,api-stable=75 api-canary=25 ,api-8488c785ff-2:Running worker-6f4bf87548-2:Running 
+13:36:33,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:36:42,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:36:50,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:36:59,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:37:07,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:37:14,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:37:22,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:37:30,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:37:37,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:37:45,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:37:52,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 
+13:38:00,Degraded,0,0,true,5c784c986c,8488c785ff,api-stable=100 api-canary=0 ,api-8488c785ff-2:Failed worker-6f4bf87548-2:Successful 

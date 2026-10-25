@@ -57,14 +57,17 @@ prom() {
     | tool_jq -r '.data.result[0].value[1] // "none"'
 }
 
-# Prints the first Rollout in the namespace whose canary was aborted, if any.
+# Prints the first Rollout whose canary OF THIS RELEASE was aborted, if any.
+# An abort left over from the previous release (the Rollout still carries the
+# old digest because Argo CD has not synced yet) is not this release's verdict.
 aborted_rollout() {
-  local r
+  local r state
   for r in api worker; do
-    if [ "$(kubectl -n "$1" get rollout "$r" -o json 2>/dev/null | tool_jq -r '.status.abort // false')" = true ]; then
-      echo "$r"
-      return
-    fi
+    state=$(kubectl -n "$1" get rollout "$r" -o json 2>/dev/null \
+      | tool_jq -r '[(.status.abort // false), .spec.template.spec.containers[0].image] | @tsv' || true)
+    case "$state" in
+      true*"@$digest") echo "$r"; return ;;
+    esac
   done
 }
 
