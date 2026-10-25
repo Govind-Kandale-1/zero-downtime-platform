@@ -22,10 +22,20 @@ digest=$GOOD_DIGEST
 [ "$SCENARIO" = wrong-digest ] && digest=$OTHER_DIGEST
 case "$args" in
   *"get application"*)
-    if [ "$SCENARIO" = never-healthy ]; then sync=OutOfSync; health=Progressing; else sync=Synced; health=Healthy; fi
+    sync=Synced; health=Healthy
+    [ "$SCENARIO" = never-healthy ] && { sync=OutOfSync; health=Progressing; }
+    if [ "$SCENARIO" = transient-degraded ]; then
+      # Degraded for the first two polls (a new stack converging), then Healthy.
+      n=$(cat "$STATE/app-calls" 2>/dev/null || echo 0); echo $((n + 1)) > "$STATE/app-calls"
+      [ "$n" -lt 2 ] && { sync=OutOfSync; health=Degraded; }
+    fi
     printf '{"status":{"sync":{"status":"%s","revisions":["0.1.42","abc123"]},"health":{"status":"%s"}}}\n' "$sync" "$health" ;;
   *"get rollout"*)
-    printf '{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/x/y@%s"}]}}},"status":{"phase":"Healthy","stableRS":"h1","currentPodHash":"h1"}}\n' "$digest" ;;
+    if [ "$SCENARIO" = aborted ]; then
+      printf '{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/x/y@%s"}]}}},"status":{"phase":"Degraded","abort":true,"stableRS":"h1","currentPodHash":"h2"}}\n' "$digest"
+    else
+      printf '{"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/x/y@%s"}]}}},"status":{"phase":"Healthy","stableRS":"h1","currentPodHash":"h1"}}\n' "$digest"
+    fi ;;
   *"--raw"*)
     q=$(printf '%s' "$args" | sed 's/.*query=//')
     empty='{"status":"success","data":{"resultType":"vector","result":[]}}'
@@ -47,7 +57,8 @@ printf 'stage: dev\nchart:\n  version: "0.1.42"\nimage:\n  repository: ghcr.io/x
 git -C "$tmp/repo" init -q && git -C "$tmp/repo" add -A && git -C "$tmp/repo" -c user.name=t -c user.email=t@e commit -qm init
 
 run_gate() { # scenario -> prints output, returns gate exit code
-  ( cd "$tmp/repo" && PATH="$tmp/bin:$PATH" SCENARIO=$1 GOOD_DIGEST=$D OTHER_DIGEST=$OTHER \
+  rm -rf "$tmp/state" && mkdir -p "$tmp/state"
+  ( cd "$tmp/repo" && PATH="$tmp/bin:$PATH" SCENARIO=$1 GOOD_DIGEST=$D OTHER_DIGEST=$OTHER STATE="$tmp/state" \
       GATE_TIMEOUT=${2:-30} GATE_POLL=1 GATE_SOAK=0 bash "$here/gate.sh" dev dev 2>&1 )
 }
 
@@ -59,6 +70,16 @@ out=$(run_gate never-healthy 5) && rc=0 || rc=$?
 took=$(( $(date +%s) - start ))
 { [ "$rc" != 0 ] && grep -q 'Application not Synced/Healthy' <<< "$out" && [ "$took" -lt 20 ]; } \
   && pass "never-healthy fails within the timeout (${took}s)" || fail "never-healthy: rc=$rc took=${took}s out=$out"
+
+out=$(run_gate transient-degraded) && rc=0 || rc=$?
+[ "$rc" = 0 ] && grep -q 'GATE PASS dev/dev' <<< "$out" \
+  && pass "a stack that is briefly Degraded while converging still passes" || fail "transient-degraded: rc=$rc out=$out"
+
+start=$(date +%s)
+out=$(run_gate aborted 60) && rc=0 || rc=$?
+took=$(( $(date +%s) - start ))
+{ [ "$rc" != 0 ] && grep -q 'aborted' <<< "$out" && [ "$took" -lt 30 ]; } \
+  && pass "an aborted canary fails fast (${took}s, not the 60s timeout)" || fail "aborted: rc=$rc took=${took}s out=$out"
 
 out=$(run_gate wrong-digest) && rc=0 || rc=$?
 [ "$rc" != 0 ] && grep -q 'digest mismatch' <<< "$out" && pass "wrong digest is rejected" || fail "wrong-digest: rc=$rc out=$out"

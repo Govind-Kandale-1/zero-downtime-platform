@@ -73,7 +73,9 @@ for s in "$@"; do
     if [ "${sync:-}/${health:-}" = "Synced/Healthy" ] && [[ ",${revs:-}," == *",$version,"* ]]; then
       break
     fi
-    [ "${health:-}" = Degraded ] && gate_fail "$s" "Application Degraded" "a rollout aborted or is failing (sync=$sync)"
+    # A new or updating stack can be briefly Degraded while it converges (e.g.
+    # its ExternalSecret has not synced yet), so Degraded alone is not a
+    # verdict; an aborted canary is (check 2), and so is the deadline.
     [ "$(date +%s)" -ge "$deadline" ] \
       && gate_fail "$s" "Application not Synced/Healthy" "sync=${sync:-?} health=${health:-?} revisions=${revs:-?} (want chart $version)"
     sleep "$poll"
@@ -83,10 +85,10 @@ for s in "$@"; do
   for r in api worker; do
     while :; do
       ro=$(kubectl -n "$ns" get rollout "$r" -o json \
-        | tool_jq -r '[.status.phase // "", .spec.template.spec.containers[0].image, (.status.stableRS == .status.currentPodHash)] | @tsv')
-      IFS=$'\t' read -r phase image complete <<< "$ro"
+        | tool_jq -r '[.status.phase // "", .spec.template.spec.containers[0].image, (.status.stableRS == .status.currentPodHash), (.status.abort // false)] | @tsv')
+      IFS=$'\t' read -r phase image complete aborted <<< "$ro"
       case "$image" in *"@$digest") ;; *) gate_fail "$s" "digest mismatch" "rollout/$r runs $image, want @$digest" ;; esac
-      [ "$phase" = Degraded ] && gate_fail "$s" "rollout/$r Degraded" "the canary was aborted by analysis"
+      [ "$aborted" = true ] && gate_fail "$s" "rollout/$r aborted" "canary analysis failed and Argo Rollouts rolled back to stable"
       [ "$phase" = Healthy ] && [ "$complete" = true ] && break
       [ "$(date +%s)" -ge "$deadline" ] && gate_fail "$s" "rollout/$r not Healthy" "phase=$phase complete=$complete"
       sleep "$poll"
