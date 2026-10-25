@@ -5,7 +5,11 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
+	"slices"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -72,20 +76,43 @@ func TestMigrateIsIdempotentAndLocked(t *testing.T) {
 			t.Fatalf("runner %d: %v", i, err)
 		}
 	}
-	if total := len(applied[0]) + len(applied[1]); total != 1 {
-		t.Fatalf("migrations applied %v and %v, want 0001 applied exactly once in total", applied[0], applied[1])
+	// Every embedded migration exactly once across both runners, whichever
+	// won the lock. Derived from the embedded files, so adding a migration
+	// doesn't break the test (0002 once did).
+	want := embeddedVersions(t)
+	got := append(append([]string{}, applied[0]...), applied[1]...)
+	sort.Strings(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("migrations applied %v and %v, want %v applied exactly once in total", applied[0], applied[1], want)
 	}
 
 	var versions []string
 	rows, _ := pool.Query(ctx, "SELECT version FROM schema_migrations ORDER BY version")
 	versions, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil || len(versions) != 1 || versions[0] != "0001" {
-		t.Fatalf("schema_migrations = %v (%v), want [0001]", versions, err)
+	if err != nil || !slices.Equal(versions, want) {
+		t.Fatalf("schema_migrations = %v (%v), want %v", versions, err, want)
 	}
 	var items int
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM items").Scan(&items); err != nil || items != 1000 {
 		t.Fatalf("items = %d (%v), want 1000 seed rows", items, err)
 	}
+}
+
+// embeddedVersions lists the versions Run would apply, by the same rule:
+// every *.sql file, version = the name up to the first "_".
+func embeddedVersions(t *testing.T) []string {
+	t.Helper()
+	files, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no embedded migrations (%v)", err)
+	}
+	var versions []string
+	for _, f := range files {
+		v, _, _ := strings.Cut(f, "_")
+		versions = append(versions, v)
+	}
+	sort.Strings(versions)
+	return versions
 }
 
 func TestMigrateToleratesUnknownAppliedVersion(t *testing.T) {

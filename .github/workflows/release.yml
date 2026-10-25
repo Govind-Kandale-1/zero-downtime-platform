@@ -7,7 +7,7 @@ name: release
 on:
   push:
     branches: [main]
-    paths: ["app/**", "charts/**", "!**/*.md"]
+    paths: ["app/**", "charts/**", "!**/*.md", "!app/**/*_test.go"] # docs and test-only changes cannot change the artifact
   workflow_dispatch:
 
 permissions:

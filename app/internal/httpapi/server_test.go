@@ -172,4 +172,3 @@ func TestMetricsExposeLatencyBucket04(t *testing.T) {
 		}
 	}
 }
-
