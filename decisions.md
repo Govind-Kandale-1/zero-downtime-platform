@@ -263,3 +263,30 @@ Date · Status · Label
 **Consequences.**
 - The secrets are still present in Terraform state, which generated them. State is therefore treated as sensitive: it is held in a credentialed Postgres locally and in an encrypted, access-controlled S3 bucket on AWS.
 - Dev-mode OpenBao loses data on restart. That is acceptable for a laptop: `terraform apply` re-seeds it, and drift detection notices the loss.
+
+## ADR-010: GitOps pull with Argo CD (app-of-apps + ApplicationSets)
+
+2026-10-25 · Accepted · Label: RUN-LOCAL
+
+**Context.** The brief asks to "choose GitOps (pull) or pipeline push" and to roll out shared first, then dedicated tenants in rings, then regions. The cluster may be anywhere (a laptop, a private VPC), and the platform must correct drift.
+
+**Decision.**
+- **Pull model.** Argo CD runs in each cluster and pulls from Git every 60 s. Terraform installs it and applies one root Application (app-of-apps).
+- **What the root manages.**
+  - Platform components: one Application each, ordered by sync waves.
+  - Environment stacks and tenants: ApplicationSets driven by `gitops/stacks/*.yaml` and `tenants/*.yaml`, with release-file pins.
+- **What pipelines do.** They never call `kubectl` or `helm` against a cluster. They only commit to Git.
+- **Drift.** Automated sync with prune and self-heal.
+
+**Rejected alternatives.**
+- *Pipeline push (`helm upgrade`/`kubectl apply` from CI):*
+  - CI would need cluster-admin credentials for every cluster, with a large blast radius if leaked.
+  - The cluster must be reachable from CI, which a private EKS or a laptop isn't.
+  - There's no continuous drift correction: a manual `kubectl edit` survives until the next deploy.
+- *Flux:* an equally valid pull-based tool. Argo CD was chosen for its UI (useful for the demo and the review), its first-class Argo Rollouts integration (rollout health, abort and promote in the UI), and ApplicationSets for tenant fan-out.
+- *One central Argo CD managing remote clusters (hub-and-spoke):* fewer installs, but the hub then holds credentials for every cluster and becomes a single point of failure. Per-cluster Argo CD keeps the pull model pure. A hub is a roadmap item, once there are many clusters.
+
+**Consequences.**
+- A promotion takes effect within about 60 s plus sync time, not instantly. That is acceptable and visible.
+- The pipeline needs a way to *observe* the result without pushing. Gates read Rollout status and metrics with read-only credentials (ADR-015).
+- Git becomes production-critical. If GitHub is down, nothing new deploys, but running workloads are unaffected.

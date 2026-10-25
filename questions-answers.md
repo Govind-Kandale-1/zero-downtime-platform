@@ -94,7 +94,24 @@ The same logic is why the Kubernetes backend was rejected: state would live insi
 **Point to:** ADR-020.
 
 ## 4. Deployment strategy
-*(added in later steps)*
+
+### Q: GitOps pull vs pipeline push: what do you actually gain?
+**A:** Three things:
+- **No cluster credentials in CI.** The pipeline only commits to Git, and Argo CD inside the cluster pulls.
+- **Clusters don't need to be reachable from CI.** This one is on a laptop; in production it would be a private EKS endpoint.
+- **Continuous drift correction.** Self-heal reverts a manual `kubectl edit` within a minute, instead of it surviving until the next deploy.
+
+The cost is that the pipeline can't directly "see" the deployment. My gates read Rollout status and Prometheus with a read-only identity.
+**Follow-ups:** "Why Argo CD over Flux?" Both are fine. Argo's UI and native Argo Rollouts integration (abort/promote, rollout health) matter for operating canaries, and ApplicationSets fan out tenants from files.
+**Point to:** ADR-010.
+
+### Q: How is drift handled?
+**A:** At two layers:
+- **Cluster objects:** Argo CD auto-sync with `selfHeal` and `prune`. Manual changes are reverted, and objects deleted from Git are deleted from the cluster.
+- **Infrastructure** (databases, secrets, cluster): `terraform plan -detailed-exitcode` per root, where exit code 2 means drift. A scheduled job turns that into a GitHub issue.
+
+Running `plan` after the provider layer was applied returns 0.
+**Point to:** ADR-004, ADR-010.
 
 ## 5. Zero downtime
 
