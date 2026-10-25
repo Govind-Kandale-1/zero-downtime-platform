@@ -1,0 +1,29 @@
+# bash scripts/up.sh  (started 2026-10-25T09:29:09Z, from an empty state: no cluster, no state DB - see down-purge.log)
+[14:59:11] preflight
+[14:59:27] terraform state backend
+[14:59:30] generated C:/Users/kandagov/Desktop/Devops/Assignment/.local/tfstate.env
+[14:59:32] creating zdp-tfstate (postgres:18.6-alpine)
+[15:00:01] Terraform state backend ready: source .local/tfstate.env
+[15:00:01] terraform apply infra/live/local/10-cluster
+[15:02:41] Terraform state backend ready: source .local/tfstate.env
+[15:02:41] terraform apply infra/live/local/20-data
+ALL PASS (5 stacks)
+[15:08:36] terraform apply infra/live/local/30-gitops
+[15:11:14] waiting for Argo CD to install the platform layer (up to 20 min)
+ALL PASS
+[15:23:28] applying read-only RBAC for ci-gate
+[15:23:30] writing read-only kubeconfig (internal endpoint) to .local/runner/kubeconfig
+[15:23:33] building runner image
+[15:23:40] requesting a registration token
+[15:23:58] runner zdp-local-kind is online (labels: self-hosted, local-kind)
+[15:24:02] verified: runner kubeconfig reads applications and cannot modify them
+[15:24:03] platform ready in 24 min 52 s
+
+  Argo CD     http://argocd.localtest.me      (admin / <redacted>)
+  Grafana     http://grafana.localtest.me
+  Rollouts    http://rollouts.localtest.me
+  Prometheus  http://prometheus.localtest.me
+  kubectl     export KUBECONFIG=C:/Users/kandagov/Desktop/Devops/Assignment/.local/kubeconfig
+
+  Apps appear per stack once a release is promoted (GitHub Actions: release).
+exit=0

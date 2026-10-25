@@ -1,0 +1,5 @@
+[14:57:23] stopping the self-hosted runner
+[14:57:29] deregistered runner 2
+[14:57:29] purge: deleting kind cluster, state DB and local state files
+[14:58:48] purged (kept .local/gitops_deploy_key)
+--- purge exit=0

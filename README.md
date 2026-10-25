@@ -21,7 +21,45 @@ A cloud-agnostic platform built for a Senior DevOps assignment. It provisions in
 
 ## Quickstart
 
-*Coming with the one-command bring-up (`scripts/up.sh`).*
+Run from Git Bash in the repo root.
+
+**1. One-time GitHub setup** (repo owner only; it writes a repo secret):
+
+```bash
+bash scripts/deploy-key.sh
+```
+
+**2. Empty laptop → running platform:**
+
+```bash
+bash scripts/up.sh
+```
+
+This creates the state DB, the kind cluster, per-stack Postgres/PgBouncer/Valkey/secrets, Argo CD and the whole platform layer, then the self-hosted gate runner. It finishes by printing the URLs and the Argo CD admin password:
+- http://argocd.localtest.me
+- http://grafana.localtest.me
+- http://rollouts.localtest.me
+- http://prometheus.localtest.me
+
+**3. Ship a release:** push a change under `app/` or `charts/`, or run:
+
+```bash
+gh workflow run release.yml
+```
+
+The pipeline builds once, scans, signs, then promotes dev → staging. It waits for your approval of the `production` environment in GitHub, then continues to prod (the shared stack) → ring 1 (acme) → ring 2 (globex), with a metric gate after every stage.
+
+**4. Tear down:** `bash scripts/down.sh` destroys the infrastructure but keeps the state; `bash scripts/down.sh --purge` returns to an empty laptop.
+
+**Tests you can run at any time:**
+
+| Command | What it proves |
+|---|---|
+| `bash scripts/test-go.sh unit` (and `integration`) | Stand-in app behaviour (integration against real Postgres + Valkey) |
+| `bash charts/app/tests/render_test.sh` | Chart properties, schemas, SLO PromQL |
+| `bash infra/live/local/20-data/tests/contract_test.sh` | The provider contract, for every stack |
+| `bash gitops/tests/platform_test.sh` | Platform layer healthy end to end |
+| `bash scripts/tests/gate_test.sh` | Promotion gate behaviour (stubbed cluster) |
 
 ## Where to read
 
