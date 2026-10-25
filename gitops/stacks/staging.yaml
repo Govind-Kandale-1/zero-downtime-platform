@@ -1,0 +1,11 @@
+# Stack descriptor (read by Terraform infra/live/local/20-data) and Helm values
+# for charts/app (read by Argo CD). One file per environment stack.
+stack:
+  name: staging
+  namespace: app-staging
+  tier: nonprod
+  release: staging
+  residency: eu
+  region: eu-central-1
+  size: tiny
+  slo: "99.9"

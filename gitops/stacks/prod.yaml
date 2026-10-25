@@ -1,0 +1,12 @@
+# Stack descriptor (read by Terraform infra/live/local/20-data) and Helm values
+# for charts/app (read by Argo CD). prod is the shared stack: shared tenants are
+# host routes onto it (tenants/*.yaml with tier: shared). It is release ring 0.
+stack:
+  name: prod
+  namespace: app-prod
+  tier: shared
+  release: prod-ring0
+  residency: eu
+  region: eu-central-1
+  size: small
+  slo: "99.9"

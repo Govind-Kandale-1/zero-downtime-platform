@@ -201,3 +201,65 @@ Date · Status · Label
 - The backend *type* differs per target (`pg` vs `s3`), so it is listed as non-portable. Everything else in the roots is identical.
 - The bootstrap stack for AWS keeps local state by necessity; this is documented.
 - Drift detection is `terraform plan -detailed-exitcode` per root (exit 2 = drift).
+
+## ADR-007: CloudNativePG + PgBouncer in transaction mode, with a separate direct URL for migrations
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (local) / NOT RUN (AWS RDS)
+
+**Context.** At 15x the platform runs about 40 API pods and up to about 120 workers. With a 10-connection pool per API pod and 2 per worker, that is roughly **640 client connections**, while a Postgres primary performs best with a few dozen active backends. Separately, the black box runs migrations at startup, and safe concurrent migrations need a **session-level advisory lock**.
+
+**Decision.**
+- **Pooling.** Every stack gets PgBouncer in **transaction mode** (`max_client_conn=1000`, `default_pool_size=40`). Runtime traffic uses `DATABASE_URL` → PgBouncer.
+- **Migrations go direct.** They use `MIGRATION_DATABASE_URL` straight to the primary.
+- **The trap this avoids.** In transaction mode, PgBouncer may give each transaction a different server backend. A `pg_advisory_lock` taken in one transaction can then be held by a backend the client never talks to again, and the `pg_advisory_unlock` lands on another backend and does nothing. The result is a lock held forever, or two pods migrating at once. Flyway, golang-migrate and Prisma all use session advisory locks.
+- **Where it runs.** Locally, Postgres is a CloudNativePG `Cluster`, with PgBouncer from its `Pooler` CRD. On AWS: RDS PostgreSQL Multi-AZ plus an in-cluster PgBouncer Deployment.
+
+**Rejected alternatives.**
+- *No pooler:* about 640 backends on one primary means context switching and per-backend memory, and `max_connections` exhaustion during scale-up.
+- *PgBouncer in session mode for everything:* safe for advisory locks, but gives almost no multiplexing. One client equals one backend.
+- *RDS Proxy:* managed, but AWS-only (not portable). It "pins" connections that use session state such as advisory locks, which silently removes the pooling benefit.
+- *Bitnami PostgreSQL chart:* Bitnami's free images moved to an unmaintained legacy repository in 2025.
+- *A plain Postgres StatefulSet:* no failover, backup or pooler management. CNPG behaves much more like a managed service.
+
+**Consequences.**
+- The app must accept two URLs. The stand-in does; for the real black box this is an assumption. If it accepts only one, run its migrations through a session-mode pool, or a direct URL plus a startup flag.
+- Prepared statements over transaction mode need PgBouncer ≥ 1.21 (`max_prepared_statements`) or driver settings that avoid them.
+- The connection maths lives in `docs/capacity.md`.
+
+## ADR-008: Valkey instead of Redis
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (local) / NOT RUN (AWS)
+
+**Context.** The black box consumes a "Redis queue", so any Redis-protocol server works. In 2024 Redis moved from BSD to source-available licences (RSAL/SSPL), and Redis 8 added AGPL as an option.
+
+**Decision.** Valkey 9.1 (the Linux Foundation fork of Redis 7.2, BSD-licensed) runs locally as a StatefulSet with AOF persistence and `noeviction`. On AWS it is **ElastiCache for Valkey**.
+
+**Rejected alternatives.**
+- *Redis OSS / Redis 8:* the licence terms are a procurement and legal question for a platform that may be resold to tenants. Valkey removes the question at no functional cost.
+- *KeyDB / Dragonfly:* compatible, but less widely adopted, and not offered as a managed service on the major clouds.
+
+**Consequences.**
+- The client libraries (go-redis), KEDA's Redis scaler and redis_exporter all work unchanged with Valkey.
+- ElastiCache for Valkey is priced about 20% below ElastiCache for Redis OSS, which helps the cost model.
+
+## ADR-009: OpenBao + External Secrets Operator as the secrets interface
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (local) / NOT RUN (AWS)
+
+**Context.** The brief requires a secrets manager. The provider contract needs the app's database and cache URLs to come from it, without the app layer knowing which cloud it is on.
+
+**Decision.**
+- **One flow on both targets:** Terraform writes `stacks/<stack>/app` into the secrets manager. **External Secrets Operator** syncs it into a Kubernetes Secret `app-env` in each stack namespace, through a `ClusterSecretStore` named `platform-secrets`.
+- **Locally**, the store is **OpenBao** in dev mode, using a token.
+- **On AWS**, the store is **AWS Secrets Manager**, using EKS Pod Identity.
+- The app chart's `ExternalSecret` is identical on both targets. Only the `ClusterSecretStore` spec differs.
+
+**Rejected alternatives.**
+- *Plain Kubernetes Secrets written by Terraform:* no secrets manager, no rotation, no audit, and the values end up in Terraform state *and* etcd with no central control.
+- *SOPS-encrypted secrets in Git:* good for GitOps, but key management moves to the repo, rotation means a commit, and there is no runtime audit trail. Not a "secrets manager".
+- *Sealed Secrets:* one controller key per cluster, so it doesn't map onto a cloud secrets manager and is hard to share across clusters.
+- *Vault (HashiCorp):* the same API, but BSL-licensed since 2023. OpenBao is the open-licence fork, and ESO's Vault provider works with it unchanged.
+
+**Consequences.**
+- The secrets are still present in Terraform state, which generated them. State is therefore treated as sensitive: it is held in a credentialed Postgres locally and in an encrypted, access-controlled S3 bucket on AWS.
+- Dev-mode OpenBao loses data on restart. That is acceptable for a laptop: `terraform apply` re-seeds it, and drift detection notices the loss.

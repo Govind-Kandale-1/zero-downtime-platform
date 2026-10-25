@@ -1,0 +1,6 @@
+# Shared tenant: a host route onto the shared prod stack (no own data services).
+name: initech
+tier: shared
+residency: eu
+region: eu-central-1
+slo: "99.9"

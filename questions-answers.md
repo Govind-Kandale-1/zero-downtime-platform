@@ -41,6 +41,25 @@ Everything above that (Argo CD, Traefik, Rollouts, KEDA, the app chart) only con
 **Follow-ups:** "What leaks through?" LB annotations, IAM, node autoscaling, backup mechanics and the state backend type (`docs/non-portable.md`).
 **Point to:** `infra/code-review.md`, ADR-003.
 
+### Q: Why does every stack have two database URLs?
+**A:** Runtime queries go through PgBouncer in transaction mode, which multiplexes hundreds of client connections onto about 40 Postgres backends. Migrations go directly to Postgres. In transaction mode PgBouncer can give each transaction a different backend, so a session-level advisory lock (which Flyway, golang-migrate and Prisma use) can be taken on one backend and "released" on another. You end up with a stuck lock, or two pods migrating at once. A direct URL for migrations avoids that.
+**Follow-ups:** "What if the black box accepts only one URL?" Point it at a session-mode pool, or direct, and accept less multiplexing. Or migrate from a pre-sync Job if the app supports a migrate-only mode.
+**Point to:** ADR-007, `app/internal/migrate/code-review.md`.
+
+### Q: Why Valkey and not Redis?
+**A:** Licensing. Redis moved to source-available licences in 2024; Valkey is the BSD-licensed Linux Foundation fork, compatible with the same protocol and clients. AWS offers ElastiCache for Valkey at about 20% less than Redis OSS. Nothing in the app, KEDA or the exporter had to change.
+**Point to:** ADR-008.
+
+### Q: How does a secret get from the secrets manager into a pod?
+**A:**
+1. Terraform generates the DB password and writes three URLs to `stacks/<stack>/app` in the secrets manager.
+2. External Secrets Operator, through a `ClusterSecretStore`, syncs that path into a Kubernetes Secret `app-env` in the stack's namespace.
+3. The pods load it with `envFrom`.
+
+Locally the store is OpenBao; on AWS it's Secrets Manager with Pod Identity. Only the store definition differs; the app chart is identical on both.
+**Follow-ups:** "Isn't the secret in Terraform state?" Yes, Terraform created it, so state is treated as sensitive: a credentialed database locally, and an encrypted, access-controlled bucket on AWS. "Rotation?" Change it in the manager; ESO's refresh interval rolls it into the Secret, and a pod restart (or a reloader) picks it up.
+**Point to:** ADR-009.
+
 ### Q: Why not Crossplane, so everything is Kubernetes-native?
 **A:** Crossplane needs a cluster before it can create one, which is a bootstrap problem. It also adds a control plane to run and debug. Terraform is the common denominator interviewers and operators know, and the contract keeps it swappable.
 **Point to:** ADR-003.

@@ -1,0 +1,9 @@
+# Dedicated tenant in the US. Locally the region is simulated by labels; on AWS
+# Terraform would place its stack in us-east-1 (NOT RUN).
+name: globex
+tier: dedicated
+residency: us
+region: us-east-1
+ring: 2
+size: small
+slo: "99.95"
