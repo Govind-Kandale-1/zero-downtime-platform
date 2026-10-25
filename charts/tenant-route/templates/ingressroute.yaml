@@ -1,0 +1,20 @@
+{{- if not .Values.tenant.name }}{{ fail "tenant.name is required" }}{{ end }}
+# Traefik names this route's router <namespace>-tenant-<name>-<hash>@kubernetescrd,
+# which gives per-tenant request/latency metrics on a shared black-box app.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ printf "tenant-%s" .Values.tenant.name }}
+  namespace: {{ .Values.sharedStack.namespace }}
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    zdp/tenant: {{ .Values.tenant.name }}
+    zdp/tier: shared
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`{{ default (printf "%s.localtest.me" .Values.tenant.name) .Values.tenant.host }}`)
+      kind: Rule
+      services:
+        - name: {{ .Values.sharedStack.traefikService }}
+          kind: TraefikService

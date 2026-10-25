@@ -1,0 +1,67 @@
+groups:
+  - name: zdp-tenant-sli-initech
+    interval: 30s
+    rules:
+      - record: zdp:tenant_sli_availability:ratio_rate5m
+        expr: |
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*",code!~"5.."}[5m]))
+          /
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*"}[5m]))
+        labels:
+          tenant: initech
+          tier: shared
+      - record: zdp:tenant_sli_availability:ratio_rate30m
+        expr: |
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*",code!~"5.."}[30m]))
+          /
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*"}[30m]))
+        labels:
+          tenant: initech
+          tier: shared
+      - record: zdp:tenant_sli_availability:ratio_rate1h
+        expr: |
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*",code!~"5.."}[1h]))
+          /
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*"}[1h]))
+        labels:
+          tenant: initech
+          tier: shared
+      - record: zdp:tenant_sli_availability:ratio_rate6h
+        expr: |
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*",code!~"5.."}[6h]))
+          /
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*"}[6h]))
+        labels:
+          tenant: initech
+          tier: shared
+      - record: zdp:tenant_sli_availability:ratio_rate3d
+        expr: |
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*",code!~"5.."}[3d]))
+          /
+          sum(rate(traefik_router_requests_total{router=~"app-prod-tenant-initech-.*"}[3d]))
+        labels:
+          tenant: initech
+          tier: shared
+  - name: zdp-tenant-slo-alerts-initech
+    rules:
+      - alert: ZdpTenantErrorBudgetBurnPage
+        expr: |
+          (
+            (1 - zdp:tenant_sli_availability:ratio_rate1h{tenant="initech"}) > (14.4 * 0.001)
+            and
+            (1 - zdp:tenant_sli_availability:ratio_rate5m{tenant="initech"}) > (14.4 * 0.001)
+          )
+          or
+          (
+            (1 - zdp:tenant_sli_availability:ratio_rate6h{tenant="initech"}) > (6 * 0.001)
+            and
+            (1 - zdp:tenant_sli_availability:ratio_rate30m{tenant="initech"}) > (6 * 0.001)
+          )
+        labels:
+          severity: page
+          tenant: initech
+          tier: shared
+          objective: "0.999"
+        annotations:
+          summary: "shared tenant initech: availability budget burning fast"
+          runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md

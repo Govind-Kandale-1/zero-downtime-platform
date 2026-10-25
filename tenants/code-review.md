@@ -21,7 +21,7 @@
 | `slo` | `"99.9"` or `"99.95"` |
 
 **What happens on merge:**
-1. CI validates the file against the policy (residency, schema).
+1. CI runs `conftest test --combine --namespace tenants -p policy tenants/*.yaml`, which checks residency, schema and file name (`policy/code-review.md`).
 2. Terraform `20-data` creates the dedicated tenant's data services and secrets.
 3. An Argo CD ApplicationSet creates the tenant's app release at its ring's pinned version.
 

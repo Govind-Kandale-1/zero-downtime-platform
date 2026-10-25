@@ -1,0 +1,12 @@
+# Rendered once per tenants/<name>.yaml with tier: shared (tenants-shared
+# ApplicationSet). The route lands in the shared stack's namespace and points
+# at its weighted TraefikService, so shared tenants ride the shared stack's
+# canaries automatically (ring 0).
+tenant:
+  name: ""
+  slo: "99.9"
+  host: ""            # default: <name>.localtest.me
+
+sharedStack:
+  namespace: app-prod
+  traefikService: api

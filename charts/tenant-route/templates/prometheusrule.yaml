@@ -1,0 +1,51 @@
+{{- $router := printf "%s-tenant-%s-.*" .Values.sharedStack.namespace .Values.tenant.name }}
+{{- $obj := divf (float64 .Values.tenant.slo) 100 }}
+{{- $budget := subf 1.0 $obj }}
+# Per-tenant SLO on the shared stack, keyed on this tenant's Traefik router
+# (same SLIs and burn-rate windows as charts/app, ADR-023).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ printf "tenant-%s-slo" .Values.tenant.name }}
+  namespace: {{ .Values.sharedStack.namespace }}
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    zdp/tenant: {{ .Values.tenant.name }}
+spec:
+  groups:
+    - name: {{ printf "zdp-tenant-sli-%s" .Values.tenant.name }}
+      interval: 30s
+      rules:
+        {{- range $w := list "5m" "30m" "1h" "6h" "3d" }}
+        - record: {{ printf "zdp:tenant_sli_availability:ratio_rate%s" $w }}
+          expr: |
+            sum(rate(traefik_router_requests_total{router=~"{{ $router }}",code!~"5.."}[{{ $w }}]))
+            /
+            sum(rate(traefik_router_requests_total{router=~"{{ $router }}"}[{{ $w }}]))
+          labels:
+            tenant: {{ $.Values.tenant.name }}
+            tier: shared
+        {{- end }}
+    - name: {{ printf "zdp-tenant-slo-alerts-%s" .Values.tenant.name }}
+      rules:
+        - alert: ZdpTenantErrorBudgetBurnPage
+          expr: |
+            (
+              (1 - zdp:tenant_sli_availability:ratio_rate1h{tenant="{{ .Values.tenant.name }}"}) > (14.4 * {{ $budget }})
+              and
+              (1 - zdp:tenant_sli_availability:ratio_rate5m{tenant="{{ .Values.tenant.name }}"}) > (14.4 * {{ $budget }})
+            )
+            or
+            (
+              (1 - zdp:tenant_sli_availability:ratio_rate6h{tenant="{{ .Values.tenant.name }}"}) > (6 * {{ $budget }})
+              and
+              (1 - zdp:tenant_sli_availability:ratio_rate30m{tenant="{{ .Values.tenant.name }}"}) > (6 * {{ $budget }})
+            )
+          labels:
+            severity: page
+            tenant: {{ .Values.tenant.name }}
+            tier: shared
+            objective: {{ $obj | quote }}
+          annotations:
+            summary: {{ printf "shared tenant %s: availability budget burning fast" .Values.tenant.name | quote }}
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md

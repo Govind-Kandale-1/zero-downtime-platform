@@ -206,7 +206,23 @@ No down-migrations: they're rarely tested and can't restore dropped data.
 **Point to:** `app/internal/httpapi/code-review.md`, ADR-005.
 
 ## 7. Multi-deployment and tenancy
-*(added in later steps)*
+
+### Q: How is EU residency *enforced*, not just documented?
+**A:** At several layers:
+- **Merge time:** a Rego policy runs in CI on every tenant file and blocks the merge if a tenant marked `residency: eu` names a region outside the EU.
+- **Region list:** member states only. London (`eu-west-2`) and Zurich (`eu-central-2`) start with "eu-" but aren't in the EU, and the policy has tests proving both are rejected.
+- **Apply time:** Terraform takes each tenant's region from that same file, so a tenant can't be validated against one region and deployed to another.
+- **On AWS:** backups and snapshot copies stay inside the residency zone, and an SCP denies non-EU regions to EU accounts. These are designed but not run.
+
+**Point to:** `policy/code-review.md`, ADR-017.
+
+### Q: How do you get per-tenant visibility on a shared black-box app?
+**A:** At the ingress. Each shared tenant gets its own host, so its own Traefik router, and Traefik labels metrics per router. That gives per-tenant request rate, error rate and latency without the app knowing tenants exist. Dedicated tenants have their own namespace, so every metric is per tenant by definition.
+**Point to:** `charts/tenant-route/code-review.md`.
+
+### Q: Dedicated tenant: namespace or cluster?
+**A:** By default, a dedicated namespace plus dedicated databases and cache (plus a tainted node pool on AWS) on a shared regional cluster. A cluster per tenant gives the strongest isolation but adds a $73/month control plane plus system nodes, a separate upgrade cycle and a separate Argo CD per tenant. Under the $9k budget that caps the fleet at a few tenants. I'd offer cluster-per-tenant only when a contract requires it.
+**Point to:** ADR-017, `docs/cost.md`.
 
 ## 8. Operations
 

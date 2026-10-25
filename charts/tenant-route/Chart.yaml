@@ -1,0 +1,7 @@
+apiVersion: v2
+name: tenant-route
+description: A shared tenant on the shared prod stack - one host route plus per-tenant SLO alerts, no data services of its own.
+type: application
+version: 0.1.0
+appVersion: "stand-in"
+kubeVersion: ">=1.30.0-0"

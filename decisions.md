@@ -434,3 +434,29 @@ Date · Status · Label
 **Consequences.**
 - Locally, Prometheus keeps only 12 h, so the 3d windows compute over whatever data exists. The design is correct, but the local data is truncated (labelled).
 - Synthetic traffic is included in the local SLIs, since it is almost all the traffic there is. Production would split it out using Traefik's `synthetic` header label.
+
+## ADR-017: A dedicated tenant gets its own namespace and data services on a shared regional cluster
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in) / DESCRIBED (dedicated node pools on AWS)
+
+**Context.** The brief requires one shared stack plus dedicated per-tenant stacks from one template; a new tenant in < 30 minutes through one reviewed change; 99.95% availability for dedicated tenants; EU data that stays in the EU; and a $9k/month budget.
+
+**Decision.**
+- **Dedicated tenant:**
+  - its own namespace (`tenant-<name>`);
+  - its own Postgres, PgBouncer and Valkey, created by the provider layer;
+  - its own app release, using the same `charts/app` chart;
+  - its own SLO rules (99.95%) and its own place in the rollout rings;
+  - on AWS (DESCRIBED), a tainted Karpenter NodePool per tenant, for compute isolation.
+- **Shared tenant:** a host route plus per-tenant SLO rules on the shared prod stack (`charts/tenant-route`).
+- **Placement:** each tenant lands on a regional cluster in its residency zone.
+- **Onboarding:** one file in `tenants/` drives everything, gated by `policy/tenants.rego`.
+
+**Rejected alternatives.**
+- *A cluster per dedicated tenant as the default:* the strongest isolation, but each cluster adds a $73/month control plane plus system nodes, a separate upgrade cycle, and its own Argo CD and monitoring stack. Under a $9k budget that caps the fleet at a handful of tenants. It is kept as an option for tenants who contractually require it.
+- *Namespace-only isolation that shares databases:* cheap, but one tenant's load or migration affects others, and per-tenant residency and backups become impossible to guarantee.
+- *Separate charts for shared and dedicated:* the two would drift apart. The brief explicitly asks for one template.
+
+**Consequences.**
+- Dedicated tenants share the Kubernetes control plane and ingress with others in the region, so a cluster-level incident affects them all. The 99.95% target relies on Multi-AZ data services, PDBs, topology spread and ring-ordered rollouts.
+- Cost per dedicated tenant is mostly its database and cache (see `docs/cost.md`).
