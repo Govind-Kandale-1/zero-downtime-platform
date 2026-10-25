@@ -1,0 +1,2 @@
+Platform and stack Applications for the local cluster live here (added by the
+platform-layer build step). Argo CD reads every *.yaml in this directory.

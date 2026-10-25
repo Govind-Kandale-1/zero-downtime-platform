@@ -1,0 +1,58 @@
+# Argo CD for the local cluster: lean (laptop memory budget), HTTP behind
+# Traefik, fast reconciliation so promotions land within ~1 minute.
+global:
+  domain: argocd.localtest.me
+
+configs:
+  params:
+    server.insecure: true # TLS is terminated at the ingress (plain HTTP locally)
+  cm:
+    timeout.reconciliation: 60s
+    timeout.reconciliation.jitter: 10s
+    # Argo CD no longer assesses child Application health by default; without
+    # this, app-of-apps sync waves would not wait for CRD/operator apps to be
+    # Healthy before syncing their consumers.
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil and obj.status.health ~= nil then
+        hs.status = obj.status.health.status
+        if obj.status.health.message ~= nil then
+          hs.message = obj.status.health.message
+        end
+      end
+      return hs
+  repositories:
+    # Public OCI Helm repo where the release pipeline pushes charts/app.
+    ghcr-charts:
+      name: ghcr-charts
+      type: helm
+      url: ghcr.io/govind-kandale-1/charts
+      enableOCI: "true"
+
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 768Mi }
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+server:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }
+applicationSet:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }
+redis:
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { memory: 128Mi }
