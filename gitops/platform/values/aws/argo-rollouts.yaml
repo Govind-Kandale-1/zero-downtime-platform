@@ -1,0 +1,17 @@
+# Argo Rollouts v1.10: Traefik traffic routing is native
+# (trafficRouting.traefik.weightedTraefikServiceName), no plugin required.
+controller:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+dashboard:
+  enabled: true
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }

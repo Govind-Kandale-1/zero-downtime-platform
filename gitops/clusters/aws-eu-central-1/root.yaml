@@ -1,0 +1,23 @@
+# App-of-apps root for the AWS eu-central-1 cluster (NOT RUN). Applied once by Terraform
+# (infra/live/aws/eu-central-1/30-gitops); after that Argo CD reconciles every manifest
+# under gitops/clusters/aws-eu-central-1/apps/ from the main branch.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+    targetRevision: main
+    path: gitops/clusters/aws-eu-central-1/apps
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

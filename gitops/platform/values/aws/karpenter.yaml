@@ -1,0 +1,12 @@
+# NOT RUN. Karpenter controller on the system node group; IAM via EKS Pod
+# Identity (infra/modules/aws/eks: module.karpenter).
+settings:
+  clusterName: zdp-euc1
+  interruptionQueue: Karpenter-zdp-euc1
+controller:
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+nodeSelector:
+  zdp/pool: system
+replicas: 2

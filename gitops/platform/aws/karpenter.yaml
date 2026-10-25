@@ -1,0 +1,84 @@
+# NOT RUN. What Karpenter may launch, and when it may take nodes away.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  role: KarpenterNodeRole-zdp-euc1
+  amiSelectorTerms:
+    - alias: al2023@latest
+  subnetSelectorTerms:
+    - tags: { karpenter.sh/discovery: zdp-euc1 }
+  securityGroupSelectorTerms:
+    - tags: { karpenter.sh/discovery: zdp-euc1 }
+  metadataOptions:
+    httpTokens: required # IMDSv2 only
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: { volumeSize: 50Gi, volumeType: gp3, encrypted: true }
+---
+# Shared pool for all stacks. On-demand for API pods (SLO), spot allowed for
+# workers via a second pool; consolidation packs nodes after the peak.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: apps
+spec:
+  template:
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: default }
+      requirements:
+        - { key: kubernetes.io/arch, operator: In, values: [amd64] }
+        - { key: karpenter.sh/capacity-type, operator: In, values: [on-demand] }
+        - { key: karpenter.k8s.aws/instance-category, operator: In, values: [c, m] }
+        - { key: karpenter.k8s.aws/instance-generation, operator: Gt, values: ["6"] }
+      expireAfter: 720h
+  limits:
+    cpu: "200" # hard ceiling = cost guard-rail for the $16k peak budget
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 5m
+    budgets:
+      - nodes: "10%" # never churn more than 10% of nodes at once
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: workers-spot
+spec:
+  template:
+    metadata:
+      labels: { zdp/pool: workers-spot }
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: default }
+      taints:
+        - { key: zdp/spot, value: "true", effect: NoSchedule }
+      requirements:
+        - { key: kubernetes.io/arch, operator: In, values: [amd64] }
+        - { key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand] }
+        - { key: karpenter.k8s.aws/instance-category, operator: In, values: [c, m] }
+  limits:
+    cpu: "200"
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 2m
+---
+# Example dedicated-tenant pool (ADR-017): tenant pods tolerate the taint and
+# select the label; nobody else lands here.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: tenant-acme
+spec:
+  template:
+    metadata:
+      labels: { zdp/tenant: acme }
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: default }
+      taints:
+        - { key: zdp/tenant, value: acme, effect: NoSchedule }
+      requirements:
+        - { key: karpenter.sh/capacity-type, operator: In, values: [on-demand] }
+        - { key: karpenter.k8s.aws/instance-category, operator: In, values: [c, m] }
+  limits:
+    cpu: "40"

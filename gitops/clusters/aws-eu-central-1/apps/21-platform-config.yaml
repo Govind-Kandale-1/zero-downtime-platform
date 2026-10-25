@@ -1,0 +1,20 @@
+# Wave 0: plain manifests that glue the platform together (secret store,
+# ingress routes for the UIs, priority classes).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-config-aws
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+    targetRevision: main
+    path: gitops/platform/aws
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ServerSideApply=true]

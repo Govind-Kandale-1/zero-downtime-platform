@@ -1,0 +1,27 @@
+# Wave -1: ingress. Edge metrics from Traefik are the SLIs and the canary
+# analysis signal (the app is a black box).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  sources:
+    - repoURL: https://traefik.github.io/charts
+      chart: traefik
+      targetRevision: 42.1.3
+      helm:
+        releaseName: traefik
+        valueFiles: [$values/gitops/platform/values/aws/traefik.yaml]
+    - repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

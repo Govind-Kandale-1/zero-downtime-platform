@@ -1,0 +1,11 @@
+# Accepted Trivy findings. Each entry needs a reason and is reviewed like code.
+misconfigurations:
+  - id: AWS-0104
+    paths:
+      - "terraform-aws-modules/eks/aws/node_groups.tf"
+    statement: >-
+      EKS node security group allows egress to 0.0.0.0/0 (terraform-aws-modules
+      default). Nodes must reach GHCR (images, OCI charts), AWS APIs, Sigstore
+      (signature verification) and GitHub (Argo CD). Egress is constrained by
+      private subnets + NAT; VPC endpoints for ECR/S3/STS and an egress
+      allow-list (AWS Network Firewall) are on the roadmap.

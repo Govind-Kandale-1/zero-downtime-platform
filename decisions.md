@@ -511,3 +511,26 @@ Date · Status · Label
 - A self-hosted runner on a public repository is a known risk. It is mitigated by: approval required for fork workflows; the runner label used only by `release.yml` on `push`/`workflow_dispatch`; read-only cluster credentials, verified by `runner-up.sh`.
 - In the cloud, the same role is played by Actions Runner Controller in each cluster.
 - Promotion depends on GitHub (Actions, GHCR, the repo). If GitHub is down, nothing new is released, but running stacks keep serving.
+
+## ADR-022: AWS reference implementation on terraform-aws-modules (NOT RUN)
+
+2026-10-25 · Accepted · Label: NOT RUN (static validation only)
+
+**Context.** The provider/platform split (ADR-003) is only credible if a second provider implementation of the same contract exists. The AWS code will not be applied (ADR-001), but it must be complete enough to plan from, and correct enough to pass validation and security scanning.
+
+**Decision.**
+- **Bootstrap:** an S3 state bucket (versioned, encrypted with a customer-managed KMS key, TLS-only, logged), a GitHub OIDC deploy role, and an EU-region permissions boundary.
+- **Network and cluster:** `terraform-aws-modules/vpc` (3 AZs, NAT per AZ, flow logs) and `terraform-aws-modules/eks` (private endpoint, Pod Identity, Karpenter submodule).
+- **Per-stack data, using raw resources:** RDS PostgreSQL Multi-AZ with 14-day PITR and backups replicated *within the residency zone*; ElastiCache for Valkey (Multi-AZ, TLS); Secrets Manager holding the same three keys; in-cluster PgBouncer.
+- **Platform:** the same platform Applications with `values/aws`, plus Karpenter NodePools and over-provisioning.
+- **Validation:** `terraform validate`, tflint and trivy in CI.
+
+**Rejected alternatives.**
+- *Hand-written VPC and EKS resources:* hundreds more lines to defend for code that is never applied. The community modules are the de facto standard, and reviewers know them.
+- *Community modules for RDS and ElastiCache too:* those resources are small, and writing them out keeps every security-relevant setting (Multi-AZ, encryption, PITR, force_ssl) visible in review.
+- *CDK or Pulumi for AWS:* a second IaC language and toolchain next to Terraform.
+- *IRSA for workload identity:* it needs an OIDC trust policy per service account. EKS Pod Identity is simpler to manage in Terraform.
+
+**Consequences.**
+- Static validation cannot prove IAM sufficiency, quotas, or the availability of instance types and engine versions; those are assumptions (`evidence/08-aws-static/README.md`).
+- Node egress to 0.0.0.0/0 is an accepted Trivy finding, with its reason in `.trivyignore.yaml`.

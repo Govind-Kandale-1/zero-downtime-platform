@@ -60,6 +60,25 @@ Locally the store is OpenBao; on AWS it's Secrets Manager with Pod Identity. Onl
 **Follow-ups:** "Isn't the secret in Terraform state?" Yes, Terraform created it, so state is treated as sensitive: a credentialed database locally, and an encrypted, access-controlled bucket on AWS. "Rotation?" Change it in the manager; ESO's refresh interval rolls it into the Secret, and a pod restart (or a reloader) picks it up.
 **Point to:** ADR-009.
 
+### Q: What would change to run this on AWS tomorrow?
+**A:** No redesign. The steps:
+1. Apply `infra/bootstrap/aws` once with an admin identity. That creates the state bucket, KMS key and the GitHub OIDC deploy role.
+2. Init each root with `-backend-config=bucket=<output>`.
+3. Apply 05 → 10 → 20 → 30 from a runner inside the VPC, because the EKS endpoint is private.
+
+Argo CD then syncs `gitops/clusters/aws-eu-central-1`, which uses the same chart, release files and gates. What I'd expect to fix on first contact:
+- IAM gaps;
+- engine-version availability (I assumed PostgreSQL 18 and Valkey 8.1);
+- a TLS TriggerAuthentication for KEDA, because ElastiCache uses in-transit encryption;
+- DNS and TLS certificates for real hostnames.
+
+None of that is in the platform or app layers.
+**Point to:** `infra/live/aws/code-review.md`, `evidence/08-aws-static/README.md`.
+
+### Q: Why EKS Pod Identity over IRSA?
+**A:** Both give pods short-lived AWS credentials. IRSA needs an OIDC provider plus a trust policy per role that names the namespace and service account, and annotations on the service account. Pod Identity is one association resource (cluster + namespace + service account → role), managed in Terraform, with no per-role OIDC conditions. ESO, Karpenter and the EBS CSI driver all use it here.
+**Point to:** `infra/modules/aws/eks/code-review.md`, ADR-022.
+
 ### Q: Why not Crossplane, so everything is Kubernetes-native?
 **A:** Crossplane needs a cluster before it can create one, which is a bootstrap problem. It also adds a control plane to run and debug. Terraform is the common denominator interviewers and operators know, and the contract keeps it swappable.
 **Point to:** ADR-003.

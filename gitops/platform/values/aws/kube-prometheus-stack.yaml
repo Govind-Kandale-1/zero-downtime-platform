@@ -1,0 +1,54 @@
+# NOT RUN. Same rules and selectors as local; production retention on gp3,
+# HA Prometheus/Alertmanager, and real alert routing.
+crds:
+  enabled: false
+kubeEtcd:
+  enabled: false # managed control plane: not scrapeable on EKS
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    replicas: 2
+    retention: 15d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: "1", memory: 4Gi }
+      limits: { memory: 8Gi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          resources:
+            requests:
+              storage: 100Gi
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 2
+  config:
+    route:
+      receiver: ticket
+      group_by: [alertname, stack, tenant]
+      routes:
+        - receiver: page
+          matchers: ['severity = "page"']
+        - receiver: "null"
+          matchers: ['alertname = "Watchdog"']
+    receivers:
+      # Wire to the on-call tool and issue tracker (secrets via ESO).
+      - name: page
+      - name: ticket
+      - name: "null"
+
+grafana:
+  persistence:
+    enabled: true
+    storageClassName: gp3

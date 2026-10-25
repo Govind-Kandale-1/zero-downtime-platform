@@ -1,0 +1,73 @@
+# NOT RUN. Same as the local cluster, plus AWS-only value overrides.
+# One Application per environment stack (gitops/stacks/*.yaml), rendering the
+# chart version + image digest pinned in that stack's release file. A stack
+# whose release file does not exist yet (nothing promoted there) gets no
+# Application - absence means "not released".
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: stacks
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    preserveResourcesOnDeletion: true # deleting a stack file never deletes its workloads
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+              revision: main
+              files:
+                - path: gitops/stacks/*.yaml
+          - git:
+              repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+              revision: main
+              pathParamPrefix: release
+              files:
+                - path: "gitops/releases/{{.stack.release}}.yaml"
+  template:
+    metadata:
+      name: "stack-{{.stack.name}}"
+      labels:
+        zdp/stage: "{{.stack.release}}"
+        zdp/tier: "{{.stack.tier}}"
+    spec:
+      project: default
+      sources:
+        - repoURL: ghcr.io/govind-kandale-1/charts
+          chart: app
+          targetRevision: "{{.chart.version}}"
+          helm:
+            releaseName: app
+            valueFiles:
+              - "$values/gitops/stacks/{{.stack.name}}.yaml"
+            valuesObject:
+              valkeyMetrics: false
+              backup: { mode: managed }
+              image:
+                repository: "{{.image.repository}}"
+                digest: "{{.image.digest}}"
+        - repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{.stack.namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true
+          - RespectIgnoreDifferences=true
+      # Argo Rollouts rewrites the canary weights mid-rollout; without this,
+      # self-heal would reset them and fight the rollout.
+      ignoreDifferences:
+        - group: traefik.io
+          kind: TraefikService
+          jsonPointers:
+            - /spec/weighted/services

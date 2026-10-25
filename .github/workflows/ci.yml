@@ -118,7 +118,7 @@ jobs:
       - name: misconfiguration scan (fail on HIGH/CRITICAL)
         run: |
           set -euo pipefail
-          trivy config --severity HIGH,CRITICAL --exit-code 1 infra
+          trivy config --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs '**/.terraform' infra
           trivy config --severity HIGH,CRITICAL --exit-code 1 --helm-values charts/app/tests/values-prod.yaml charts/app
           trivy config --severity HIGH,CRITICAL --exit-code 1 --helm-set tenant.name=initech charts/tenant-route
           trivy config --severity HIGH,CRITICAL --exit-code 1 app
