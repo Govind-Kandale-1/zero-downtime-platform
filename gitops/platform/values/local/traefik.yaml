@@ -1,7 +1,8 @@
 # Traefik on kind: NodePorts mapped to host 80/443 by the kind config.
 # On AWS the same chart runs as type LoadBalancer behind an NLB (values/aws).
 service:
-  type: NodePort
+  spec:
+    type: NodePort # chart v42 key; a top-level service.type is silently ignored
 ports:
   web:
     nodePort: 30080
