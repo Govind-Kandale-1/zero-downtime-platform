@@ -16,24 +16,30 @@ image:
   repository: ghcr.io/govind-kandale-1/zero-downtime-platform
   digest: ""           # required: sha256:<64 hex>; never a tag
 
-# Requests sized for the Go stand-in. CPU tracks total req/s, not pod count,
-# so many small pods fit the laptop budget.
+# Requests sized for the Go stand-in. Memory scales with stack size. API CPU
+# does not: it follows the load each pod carries (api.cpuRequest below).
 sizes:
   tiny:
-    api: { cpu: 25m, memory: 24Mi, memoryLimit: 64Mi }
+    api: { memory: 24Mi, memoryLimit: 64Mi }
     worker: { cpu: 10m, memory: 16Mi, memoryLimit: 48Mi }
   small:
-    api: { cpu: 50m, memory: 32Mi, memoryLimit: 96Mi }
+    api: { memory: 32Mi, memoryLimit: 96Mi }
     worker: { cpu: 20m, memory: 24Mi, memoryLimit: 64Mi }
   medium:
-    api: { cpu: 100m, memory: 64Mi, memoryLimit: 192Mi }
+    api: { memory: 64Mi, memoryLimit: 192Mi }
     worker: { cpu: 50m, memory: 32Mi, memoryLimit: 96Mi }
 
 api:
   minReplicas: 3              # one per zone for availability
   maxReplicas: 40
   rpsPerPod: 70               # placeholder until calibrated: 70% of measured per-pod capacity
-  cpuUtilization: 70          # safety-net trigger
+  # CPU is a safety-net trigger: it must fire AFTER the RPS trigger and before
+  # saturation, never first. Measured (evidence/01): ~1.4 millicores per req/s,
+  # with no fixed per-pod cost. 200m at 100% fires at ~143 req/s per pod, which
+  # is above the prod target (126) and below capacity (C ~ 180 req/s, ~250m).
+  # The old 50m at 70% fired at ~25 req/s and sized the fleet on CPU.
+  cpuRequest: 200m
+  cpuUtilization: 100
   canarySteps: [10, 25, 50]
   pauseSeconds: 120
   terminationGracePeriodSeconds: 30
@@ -80,3 +86,7 @@ secretStore: platform-secrets
 # Local target only: scrape the redis_exporter sidecar that the provider layer
 # runs next to Valkey (queue length). On AWS queue metrics come from CloudWatch.
 valkeyMetrics: true
+
+# Local target only: scrape the CloudNativePG Postgres and PgBouncer exporters
+# (connection pool waits, backends). On AWS, RDS metrics come from CloudWatch.
+dbMetrics: true

@@ -90,7 +90,7 @@ The whole chain fits well inside the 5-minute target, even with the 3-minute ram
 
 ## 6. Nodes on AWS (DESCRIBED)
 
-With the stand-in's requests (API 50m/32 Mi, worker 20m/24 Mi), the whole peak fleet (21 API + 120 workers) needs about 3.5 vCPU and 3.5 GiB. That's two `m7i.large` nodes. A real app is heavier. Assuming **0.5 vCPU / 512 Mi per API pod at C**, the sizing works out as follows:
+With the stand-in's requests (API 200m/32 Mi, worker 20m/24 Mi), the whole peak fleet (21 API + 120 workers) needs about 6.6 vCPU and 3.5 GiB. That's two `m7i.xlarge` nodes. (The API request was 50m until evidence 01 showed it made the CPU safety-net trigger fire at about 25 req/s per pod; see section 7.) A real app is heavier. Assuming **0.5 vCPU / 512 Mi per API pod at C**, the sizing works out as follows:
 
 | Load | API pods | API vCPU | Workers (0.1 vCPU each) | Nodes (`m7i.xlarge`, 4 vCPU, 80% usable) |
 |---|---|---|---|---|

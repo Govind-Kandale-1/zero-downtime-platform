@@ -50,3 +50,37 @@ spec:
     - port: metrics
       interval: 15s
 {{- end }}
+{{- if .Values.dbMetrics }}
+---
+# The provider layer's CloudNativePG exporters (local only). PgBouncer's pool
+# waits (cnpg_pgbouncer_pools_cl_waiting, _maxwait) are what separate "the app
+# is slow" from "the app is waiting for a database connection".
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: postgres
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: pgbouncer
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchExpressions:
+      - key: cnpg.io/poolerName
+        operator: Exists
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 15s
+{{- end }}

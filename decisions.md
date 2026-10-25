@@ -383,6 +383,12 @@ Date · Status · Label
 - Scale-up to 15x takes about 10 s (poll) + 15 s (HPA) per doubling, plus pod start. That's roughly 1.5 minutes in-cluster. On AWS, Karpenter node provisioning adds about 60–90 s, absorbed by over-provisioning pods.
 - `spec.replicas` is left out of the Rollouts so Argo CD and KEDA don't fight over it.
 
+**Revised 2026-10-25 (evidence 01): the CPU safety net fired first.** Under 150 req/s of steady load the HPA went from 3 to 14 API pods in 30 s, with the reason "cpu resource utilization above target". It then sat at 14–15 pods running at about 7% of their capacity. The cause was the CPU request, not the trigger design: the request was 50m and the trigger 70% of it, i.e. 35m. The stand-in uses about **1.4 millicores per req/s** (measured: total API CPU against total edge RPS at 20 and 170 req/s, with no meaningful fixed cost per pod). So CPU crossed its threshold at about 25 req/s per pod, five times below the RPS target of 126. The rule now:
+- **A safety-net trigger must fire after the primary trigger and before saturation.** With `api.cpuRequest: 200m` and `cpuUtilization: 100`, CPU fires at about 143 req/s per pod. That's above the prod target (126) and below capacity (C ≈ 180, about 250m).
+- **API CPU follows per-pod load, not stack size**, so it moved out of `sizes` into one value. Memory still scales with size.
+- A render test enforces `request × utilization ≥ 1.4 m × 126`.
+- The same evidence run found **no database metrics** at all. The CloudNativePG Postgres and PgBouncer exporters are now scraped (`dbMetrics`, local only), so pool waits can be told apart from slow code.
+
 ## ADR-018: Expand/contract migrations, a pre-sync backup, and a rollback-after-migration policy
 
 2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in) for expand + rollback; DESCRIBED for contract

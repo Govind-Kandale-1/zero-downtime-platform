@@ -67,7 +67,7 @@ spec:
               sleep:
                 seconds: {{ .Values.api.preStopSleepSeconds }}
           resources:
-            requests: { cpu: {{ $size.api.cpu }}, memory: {{ $size.api.memory }} }
+            requests: { cpu: {{ .Values.api.cpuRequest }}, memory: {{ $size.api.memory }} }
             limits: { memory: {{ $size.api.memoryLimit }} }
           securityContext:
             {{- include "app.containerSecurity" . | nindent 12 }}

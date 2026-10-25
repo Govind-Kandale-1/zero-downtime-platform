@@ -47,6 +47,7 @@ spec:
               - "$values/gitops/stacks/{{.stack.name}}.yaml"
             valuesObject:
               valkeyMetrics: false
+              dbMetrics: false # RDS metrics come from CloudWatch
               backup: { mode: managed }
               image:
                 repository: "{{.image.repository}}"

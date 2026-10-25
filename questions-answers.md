@@ -248,6 +248,14 @@ No down-migrations: they're rarely tested and can't restore dropped data.
 **Follow-ups:** "How long to reach 15x?" In-cluster, about 10 s polling plus 15 s per HPA step, doubling each step, plus a few seconds of pod start: 1–2 minutes. On AWS, add about 60–90 s for Karpenter nodes, hidden by over-provisioning pods.
 **Point to:** ADR-013, `charts/app/templates/scaledobject-api.yaml`.
 
+### Q: Your evidence shows prod scaling to 14 pods for 160 req/s. Isn't that a bug?
+**A:** Yes, and the evidence run is what found it. The HPA events said "cpu resource utilization above target", not RPS. The API's CPU request was 50m and the safety-net trigger 70% of it. The stand-in uses about 1.4 millicores per req/s, so CPU crossed the line at about 25 req/s per pod, five times below the RPS target of 126. The "safety net" was really the primary trigger, and the fleet sat at about 7% utilisation. The fix is a rule, not a tweak: a safety-net trigger must fire *after* the primary one and *before* saturation. A 200m request at 100% fires at about 143 req/s per pod, between the target (126) and capacity (~180). A render test now enforces that inequality, so a future resize can't quietly reintroduce the problem.
+**Follow-ups:**
+- "Why not just delete the CPU trigger?" It covers the case where the RPS signal is missing (a Prometheus outage) or a release makes each request heavier.
+- "And the latency bump during that scale-up?" p95 was about 1 s for roughly 45 s, with 0 errors. Every pod slowed down, including warm ones, while node CPU stayed at 54% and nothing was throttled. That points at shared database connection setup, but there were no pool metrics to prove it. So the PgBouncer and Postgres exporters are now scraped too.
+
+**Point to:** ADR-013 (revised), `evidence/01-deploy-under-load/README.md`.
+
 ### Q: Doesn't scaling workers down kill jobs?
 **A:** No. KEDA scale-in sends SIGTERM like any other stop: the worker stops claiming and finishes its current job within the 90 s grace period. If it's killed anyway, the reaper requeues the job. Scale-down is also damped (a 5-minute window, at most −20% per minute), so a brief dip in the queue doesn't trigger a mass stop.
 **Point to:** ADR-006, ADR-013.

@@ -45,6 +45,19 @@ check "API ScaledObject scales on Traefik RPS per pod" \
   "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="prometheus") | .metadata.threshold')" "70"
 check "worker ScaledObject scales on list length 5" \
   "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="worker") | .spec.triggers[0].metadata.listLength')" "5"
+# The CPU trigger is a safety net: it must fire AFTER the RPS trigger, not
+# before. The stand-in uses ~1.4 millicores per req/s (evidence/01), so the CPU
+# threshold (request x utilization) must cover 1.4 m x the highest RPS target
+# in use (prod: 126). A 50m request at 70% fired at ~25 req/s per pod and sized
+# the fleet on CPU instead of load.
+cpu_req=$(q "$prod" 'select(.kind=="Rollout" and .metadata.name=="api") | .spec.template.spec.containers[0].resources.requests.cpu' | tr -d m)
+cpu_util=$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="cpu") | .metadata.value')
+check "API CPU trigger fires above the prod RPS target (126 req/s x 1.4 m)" \
+  "$(awk -v r="$cpu_req" -v u="$cpu_util" 'BEGIN { print (r * u / 100 >= 126 * 1.4) ? "yes" : "no (" r "m x " u "%)" }')" "yes"
+check "API CPU request is the same for every stack size" \
+  "$(q "$(render values-dev.yaml app-dev)" 'select(.kind=="Rollout" and .metadata.name=="api") | .spec.template.spec.containers[0].resources.requests.cpu')" "${cpu_req}m"
+check "Postgres and PgBouncer exporters are scraped" \
+  "$(q "$prod" 'select(.kind=="PodMonitor") | .metadata.name' | grep -cE '^(postgres|pgbouncer)$')" "2"
 check "PDBs for api and worker" \
   "$(q "$prod" 'select(.kind=="PodDisruptionBudget") | .metadata.name' | sort | tr '\n' ' ')" "api worker "
 check "images pinned by digest, never a tag" \
