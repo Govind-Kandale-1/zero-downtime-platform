@@ -1,0 +1,7 @@
+ramp-15x base=150 peak=2250 req/s
+http_reqs: count=90647 rate=153.7/s
+http_req_failed: rate=0.5163 (failed=46801, ok=43846)
+http_req_duration{phase:base}: avg=45.4ms p(90)=45.8ms p(95)=49.0ms max=565.2ms
+http_req_duration{phase:ramp}: avg=5377.5ms p(90)=10200.9ms p(95)=10363.8ms max=20418.8ms
+http_req_duration{phase:hold}: avg=4392.2ms p(90)=10593.3ms p(95)=11846.7ms max=26046.6ms
+http_req_duration: avg=4108.5ms p(90)=10168.3ms p(95)=10430.8ms max=26046.6ms

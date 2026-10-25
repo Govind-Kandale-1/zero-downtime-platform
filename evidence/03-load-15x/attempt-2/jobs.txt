@@ -1,0 +1,4 @@
+producer TOTAL=5000 at 5.56/s
+http_reqs: count=3785 rate=5.5/s
+http_req_failed: rate=0.4077 (failed=1543, ok=2242)
+http_req_duration: avg=2996.4ms p(90)=10001.9ms p(95)=10040.3ms max=13050.8ms

@@ -394,6 +394,14 @@ Date · Status · Label
 - The HPA takes the **maximum** across triggers: RPS sizes the steady state, in-flight reacts to saturation, and CPU is the safety net.
 - **Assumption for the real app:** it exposes an active-requests gauge, such as OpenTelemetry's `http.server.active_requests` (`api.inflightMetric`). If it doesn't, the fallback is Traefik's entrypoint `open_connections`, which is shared across stacks and inflated by idle keep-alives. This is in the open questions.
 
+**Revised a third time 2026-10-25 (evidence 03, attempts 2–3): size the target for the ramp, not only for steady state. Designed, not applied.**
+- Reactive scaling only keeps up if the spare capacity covers **ramp slope × reaction time**. The reaction time is about 60 s here: the 1-minute rate window lags a ramp by about 30 s, then scrape, KEDA poll, HPA sync and pod start.
+- The brief's ramp (2,100 req/s in 3 min, 11.7 req/s per second) needs about 700 req/s of headroom. 3 pods at 70% of C leave about 390. So the current targets **saturate briefly during the ramp on any infrastructure**.
+- On a real cluster the in-flight trigger recovers that in about 30 s, as a latency bump (attempt 2 showed it reacting 4 → 12 → 21). On the laptop, saturation starves the shared VM and collapses the cluster (attempts 2 and 3).
+- **The fix:** a `rate(...[30s])` window, 5 s scrape and poll for the scaling metrics, `rpsPerPod` ≈ 80 (about 45–50% of C), `inflightPerPod` 3.5, and KEDA `cron` pre-scaling for peaks known in advance.
+- **Cost:** about 30 API pods at peak instead of about 21, i.e. about 4.5 more vCPU while the peak lasts.
+- **Not applied:** the owner chose to stop load testing at the analysis stage. It's the first item on the roadmap.
+
 ## ADR-018: Expand/contract migrations, a pre-sync backup, and a rollback-after-migration policy
 
 2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in) for expand + rollback; DESCRIBED for contract

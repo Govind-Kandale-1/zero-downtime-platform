@@ -264,6 +264,22 @@ No down-migrations: they're rarely tested and can't restore dropped data.
 
 **Point to:** ADR-013 (second revision), `evidence/03-load-15x/README.md`.
 
+### Q: So did you prove 15x in under 5 minutes?
+**A:** No, and the evidence says so. Three attempts ran. The first two found and fixed real defects: a capped scaling signal and an under-sized single edge proxy. All three hit the laptop's ceiling of about 650–800 req/s, where the load generator, 21 API pods, 58 workers and the control plane share 12 cores. What *is* proven:
+- no job is ever lost under overload (accepted = processed, every attempt);
+- the scaler reacts to saturation within about 30 s (4 → 12 → 21);
+- the edge survives losing a replica;
+- p95 is 49 ms at baseline with the full job load running.
+
+The analysis also found something the laptop didn't cause. **Reactive scaling needs headroom ≥ ramp slope × reaction time**. That's about 700 req/s for the brief's ramp, and today's targets leave about 390, so even on AWS there would be a 30–60 s latency bump mid-ramp. The fix is designed (a faster signal, a lower target, cron pre-scaling for known peaks) and costs about 4.5 vCPU during peaks.
+**Follow-ups:** "Why stop there?" More laptop runs would only re-confirm the arithmetic. The next useful test is a real cluster with the load generator outside it, which is on the roadmap.
+
+**Point to:** `evidence/03-load-15x/README.md`, ADR-013 (third revision).
+
+### Q: Your workers kept ~280 jobs queued at peak. Why?
+**A:** KEDA's Redis list trigger computes `desired = waiting jobs / listLength`. With `listLength: 5`, keeping the 56 workers Little's law calls for requires about 280 jobs *waiting*. The worker count is right, but every job queues for about 50 s first (measured: oldest job 40–51 s). `listLength: 1` gives the same workers and a 5x shorter queue. Scaling on waiting + in-progress jobs is better still. It's on the roadmap. It never breached the gate's 120 s queue-age limit, which is why the gate didn't catch it.
+**Point to:** `evidence/03-load-15x/README.md` (second finding).
+
 ### Q: Doesn't scaling workers down kill jobs?
 **A:** No. KEDA scale-in sends SIGTERM like any other stop: the worker stops claiming and finishes its current job within the 90 s grace period. If it's killed anyway, the reaper requeues the job. Scale-down is also damped (a 5-minute window, at most −20% per minute), so a brief dip in the queue doesn't trigger a mass stop.
 **Point to:** ADR-006, ADR-013.

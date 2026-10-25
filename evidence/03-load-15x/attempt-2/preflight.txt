@@ -1,0 +1,3 @@
+[22:48:50] pinned to 1 replica during the test: app-dev app-staging tenant-acme tenant-globex
+[22:49:19] memory requests now 4534 MiB; projected peak with prod at max replicas 6502 MiB; budget 6656 MiB
+[22:49:19] OK: headroom 154 MiB

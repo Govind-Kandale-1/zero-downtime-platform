@@ -1,0 +1,21 @@
+# k6 request failures per minute (UTC), summarised from the full k6 log
+minute,timeout,eof,refused,reset,other
+17:25,4859,0,0,0,0
+17:26,13047,146,1759,1,0
+17:27,11300,0,0,0,0
+17:28,2705,0,0,0,0
+17:29,1502,0,0,0,0
+
+# k6 end-of-test output
+http_req_failed: rate=0.5163 (failed=46801, ok=43846)
+http_req_duration{phase:base}: avg=45.4ms p(90)=45.8ms p(95)=49.0ms max=565.2ms
+http_req_duration{phase:ramp}: avg=5377.5ms p(90)=10200.9ms p(95)=10363.8ms max=20418.8ms
+http_req_duration{phase:hold}: avg=4392.2ms p(90)=10593.3ms p(95)=11846.7ms max=26046.6ms
+http_req_duration: avg=4108.5ms p(90)=10168.3ms p(95)=10430.8ms max=26046.6ms
+
+running (09m50.8s), 0000/3000 VUs, 87647 complete and 3000 interrupted iterations
+ramp15x ✗ [  72% ] 3000/3000 VUs  08m41.2s/12m0s  2250.00 iters/s
+
+running (09m50.8s), 0000/3000 VUs, 87647 complete and 3000 interrupted iterations
+ramp15x ✗ [  72% ] 3000/3000 VUs  08m41.2s/12m0s  2250.00 iters/s
+time="2026-10-25T17:32:12Z" level=error msg="test run was aborted because k6 received a 'interrupt' signal"

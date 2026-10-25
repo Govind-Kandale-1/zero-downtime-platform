@@ -1,0 +1,9 @@
+# k6 request failures per minute (UTC), summarised from the full k6 log
+minute,timeout,eof,refused,reset,other
+17:53,1,0,0,0,0
+17:57,393,0,0,0,0
+17:58,7702,0,0,0,0
+17:59,6881,0,0,0,0
+18:00,6511,0,0,0,0
+18:01,3490,0,0,0,0
+18:02,2915,0,0,0,0
