@@ -57,6 +57,17 @@ prom() {
     | tool_jq -r '.data.result[0].value[1] // "none"'
 }
 
+# Prints the first Rollout in the namespace whose canary was aborted, if any.
+aborted_rollout() {
+  local r
+  for r in api worker; do
+    if [ "$(kubectl -n "$1" get rollout "$r" -o json 2>/dev/null | tool_jq -r '.status.abort // false')" = true ]; then
+      echo "$r"
+      return
+    fi
+  done
+}
+
 is_num() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; }
 lt() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }'; }
 
@@ -75,7 +86,11 @@ for s in "$@"; do
     fi
     # A new or updating stack can be briefly Degraded while it converges (e.g.
     # its ExternalSecret has not synced yet), so Degraded alone is not a
-    # verdict; an aborted canary is (check 2), and so is the deadline.
+    # verdict - but an aborted canary is, and it leaves the app Degraded.
+    if [ "${health:-}" != Healthy ]; then
+      r=$(aborted_rollout "$ns")
+      [ -n "$r" ] && gate_fail "$s" "rollout/$r aborted" "canary analysis failed and Argo Rollouts rolled back to stable"
+    fi
     [ "$(date +%s)" -ge "$deadline" ] \
       && gate_fail "$s" "Application not Synced/Healthy" "sync=${sync:-?} health=${health:-?} revisions=${revs:-?} (want chart $version)"
     sleep "$poll"

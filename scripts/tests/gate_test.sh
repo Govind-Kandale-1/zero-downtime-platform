@@ -24,6 +24,7 @@ case "$args" in
   *"get application"*)
     sync=Synced; health=Healthy
     [ "$SCENARIO" = never-healthy ] && { sync=OutOfSync; health=Progressing; }
+    [ "$SCENARIO" = aborted ] && health=Degraded # an aborted canary leaves the app Degraded
     if [ "$SCENARIO" = transient-degraded ]; then
       # Degraded for the first two polls (a new stack converging), then Healthy.
       n=$(cat "$STATE/app-calls" 2>/dev/null || echo 0); echo $((n + 1)) > "$STATE/app-calls"
