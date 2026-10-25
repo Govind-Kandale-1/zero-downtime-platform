@@ -1,0 +1,16 @@
+argo-rollouts Synced Healthy
+external-secrets Synced Healthy
+keda Synced Healthy
+kube-prometheus-stack Synced Healthy
+metrics-server Synced Healthy
+platform-config Synced Healthy
+prometheus-operator-crds Synced Healthy
+root Synced Healthy
+stack-acme Synced Healthy
+stack-dev Synced Healthy
+stack-globex Synced Healthy
+stack-prod Synced Healthy
+stack-staging Synced Healthy
+synthetic-traffic Synced Healthy
+tenant-initech Synced Healthy
+traefik Synced Healthy

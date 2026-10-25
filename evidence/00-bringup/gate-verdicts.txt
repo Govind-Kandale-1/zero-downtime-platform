@@ -1,0 +1,10 @@
+prod-ring0 / gate: [11:05:03] gate prod-ring0: expecting chart 0.1.2, image f91b81a53299, stacks: prod
+prod-ring0 / gate: GATE PASS prod-ring0/prod (5xx ratio=0, p95=0.07862456747404839s, oldest job=0s)
+dev / gate: [10:34:23] gate dev: expecting chart 0.1.2, image f91b81a53299, stacks: dev
+dev / gate: GATE PASS dev/dev (5xx ratio=0, p95=0.04881781750924784s, oldest job=0s)
+staging / gate: [10:37:51] gate staging: expecting chart 0.1.2, image f91b81a53299, stacks: staging
+staging / gate: GATE PASS staging/staging (5xx ratio=0, p95=0.04752852852852853s, oldest job=0s)
+ring1 / gate: [11:08:36] gate ring1: expecting chart 0.1.2, image f91b81a53299, stacks: acme
+ring1 / gate: GATE PASS ring1/acme (5xx ratio=0, p95=0.04890914709517923s, oldest job=0s)
+ring2 / gate: [11:12:37] gate ring2: expecting chart 0.1.2, image f91b81a53299, stacks: globex
+ring2 / gate: GATE PASS ring2/globex (5xx ratio=0, p95=0.05279069767441847s, oldest job=0s)

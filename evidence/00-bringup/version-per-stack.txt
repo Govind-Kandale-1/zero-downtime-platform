@@ -1,0 +1,6 @@
+dev      {"version":"9fee23a569a882a42d2d22f0b66b21f244410f48"}
+staging  {"version":"9fee23a569a882a42d2d22f0b66b21f244410f48"}
+prod     {"version":"9fee23a569a882a42d2d22f0b66b21f244410f48"}
+initech  {"version":"9fee23a569a882a42d2d22f0b66b21f244410f48"}
+acme     {"version":"9fee23a569a882a42d2d22f0b66b21f244410f48"}
+globex   {"version":"9fee23a569a882a42d2d22f0b66b21f244410f48"}
