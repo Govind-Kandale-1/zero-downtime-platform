@@ -1,0 +1,5 @@
+steady 150 req/s
+http_reqs: count=116988 rate=149.1/s
+http_req_failed: rate=0.0000 (failed=0, ok=116988)
+http_req_duration: avg=55.3ms p(90)=46.0ms p(95)=53.1ms max=5869.3ms
+time="2026-10-25T14:23:33Z" level=error msg="test run was aborted because k6 received a 'interrupt' signal"

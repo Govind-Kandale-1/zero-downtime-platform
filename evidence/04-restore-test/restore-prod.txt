@@ -1,0 +1,7 @@
+started 2026-10-25T15:04:44Z
+[20:34:45] taking a fresh backup with cronjob/backup (backup-drill-1792940685)
+wrote /backups/backup-20261025T150446Z.dump (7003 bytes) counts: 1000 a507239feac98237e4a9353e455f1a11
+[20:34:52] creating CNPG cluster restore-test
+[20:35:22] cluster ready after 30 s; restoring /backups/backup-20261025T150446Z.dump
+dump=/backups/backup-20261025T150446Z.dump recorded=[1000 a507239feac98237e4a9353e455f1a11] restored=[1000 a507239feac98237e4a9353e455f1a11]
+RESTORE PASS app-prod: rows=1000 md5=a507239feac98237e4a9353e455f1a11 rto_seconds=38 (new instance 30 s + restore and verify 8 s)

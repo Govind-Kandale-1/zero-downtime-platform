@@ -1,0 +1,5 @@
+dev / gate: GATE PASS dev/dev (5xx ratio=0, p95=0.04758563701923077s, oldest job=0s)
+prod-ring0 / gate: GATE PASS prod-ring0/prod (5xx ratio=0, p95=0.04833128011884488s, oldest job=0s)
+ring1 / gate: GATE PASS ring1/acme (5xx ratio=0, p95=0.047844619105199514s, oldest job=0s)
+ring2 / gate: GATE PASS ring2/globex (5xx ratio=0, p95=0.04772919179734619s, oldest job=0s)
+staging / gate: GATE PASS staging/staging (5xx ratio=0, p95=0.04752852852852853s, oldest job=0s)

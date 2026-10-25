@@ -1,0 +1,15 @@
+analysisrun api-5f4b6fd58d-2 phase=Successful started=2026-10-25T14:12:11Z (rollout revision 2)
+metric canary-request-count: phase=Successful count=3 successful=3 failed=0
+  2026-10-25T14:13:11Z Successful value=[998.5641293477053]
+  2026-10-25T14:14:11Z Successful value=[2552.2835870652298]
+  2026-10-25T14:15:11Z Successful value=[5061.783269623967]
+metric canary-p95-latency: phase=Successful count=3 successful=3 failed=0
+  2026-10-25T14:13:11Z Successful value=[0.047862991536186464]
+  2026-10-25T14:14:11Z Successful value=[0.047499999999999994]
+  2026-10-25T14:15:11Z Successful value=[0.047562648377736744]
+metric canary-success-rate: phase=Successful count=3 successful=3 failed=0
+  2026-10-25T14:13:11Z Successful value=[1]
+  2026-10-25T14:14:11Z Successful value=[1]
+  2026-10-25T14:15:11Z Successful value=[1]
+api-5f4b6fd58d-2      Successful   2026-10-25T14:12:11Z
+worker-76945dc875-2   Successful   2026-10-25T14:12:10Z
