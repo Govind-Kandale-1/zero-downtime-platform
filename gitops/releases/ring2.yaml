@@ -1,8 +1,8 @@
 # Release pin for stage "ring2" - written by scripts/bump-release.sh.
-# Every Application on this stage renders chart 0.1.7 with this exact image.
+# Every Application on this stage renders chart 0.1.9 with this exact image.
 stage: ring2
 chart:
-  version: "0.1.7"
+  version: "0.1.9"
 image:
   repository: ghcr.io/govind-kandale-1/zero-downtime-platform
   digest: "sha256:bacdf833941dec424af4078bcb285fdfa8d9268a4373dfc6fa97195251c76f78"
