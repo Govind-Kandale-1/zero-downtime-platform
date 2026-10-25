@@ -10,3 +10,5 @@ crash.log
 app/bin/
 # Scratch output from evidence runs (curated logs are committed, tmp/ is not)
 evidence/**/tmp/
+# Agent scratch space (plan ledger lives in .superpowers/sdd, self-ignored)
+.superpowers/tmp/
