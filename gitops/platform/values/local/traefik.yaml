@@ -41,8 +41,15 @@ metrics:
     headerLabels:
       synthetic: X-Synthetic
 
+# Two replicas and a 512Mi limit (AWS: 3 / 512Mi). In 15x attempt 1 the single
+# replica was OOM-killed at its old 256Mi limit three times, at 2,000-6,700
+# open connections (~150 MiB at rest plus roughly 30-50 KiB per connection),
+# and every kill took the edge down for every stack (evidence 03).
 deployment:
-  replicas: 1
+  replicas: 2
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
 resources:
-  requests: { cpu: 100m, memory: 64Mi }
-  limits: { memory: 256Mi }
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 512Mi }
