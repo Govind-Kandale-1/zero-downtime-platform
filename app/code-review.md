@@ -19,6 +19,14 @@ It adds two stand-in-only knobs: a capacity model (`MAX_INFLIGHT` / `WORK_LATENC
 | `internal/worker/` | Consumer loop and its stand-in-only metrics |
 | `internal/migrate/` | Advisory-locked, forward-only migration runner |
 | `migrations/` | Embedded SQL (`0001` creates and seeds `items`) |
+| `Dockerfile` | Multi-stage build. Stage 1 (`golang:${GO_VERSION}-alpine`): `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w -X main.version=${VERSION}"`, with BuildKit cache mounts for the module and build caches; it builds all of `./cmd/...`. Stage 2 (`${BASE_IMAGE}` = `distroless/static-debian13:nonroot`) holds `/api`, `/worker` and `/synthetic` only. `USER 65532`, `ENTRYPOINT ["/api"]` (the worker runs via `command: ["/worker"]`). OCI labels: `source` links the GHCR package to this repo; `licenses` is proprietary. |
+| `.dockerignore` | Keeps docs, `bin/` and the Dockerfile out of the build context |
+
+**Image facts** (measured by `scripts/tests/image_smoke_test.sh`):
+- About **14 MB compressed** to pull; 36.5 MB of binaries plus a ~2 MB base on disk.
+- **0 vulnerabilities** in Trivy (OS packages and all three Go binaries, CRITICAL/HIGH, fixable).
+- No shell or package manager, so a compromised container has nothing to work with. Debugging uses `kubectl debug` with an ephemeral container.
+- **One image for API and worker** means one digest is built once, scanned once, signed once and promoted for both (ADR-014).
 
 Each folder has its own `code-review.md` with the detail.
 

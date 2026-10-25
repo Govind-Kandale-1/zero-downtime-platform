@@ -35,7 +35,7 @@ tool_conftest()    { _native_or conftest    "openpolicyagent/conftest:v${CONFTES
 tool_kubeconform() { _native_or kubeconform "ghcr.io/yannh/kubeconform:v${KUBECONFORM_VERSION}" "$@"; }
 tool_trivy() {
   if command -v trivy >/dev/null 2>&1; then trivy "$@"; return; fi
-  TOOL_DOCKER_ARGS="${TOOL_DOCKER_ARGS:-} -v zdp-trivycache:/root/.cache/trivy -v //var/run/docker.sock:/var/run/docker.sock" \
+  TOOL_DOCKER_ARGS="${TOOL_DOCKER_ARGS:-} -v zdp-trivycache:/root/.cache/trivy -v /var/run/docker.sock:/var/run/docker.sock" \
     _in_container "aquasec/trivy:${TRIVY_VERSION}" "$@"
 }
 tool_tflint()      { _native_or tflint      "ghcr.io/terraform-linters/tflint:v${TFLINT_VERSION}" "$@"; }

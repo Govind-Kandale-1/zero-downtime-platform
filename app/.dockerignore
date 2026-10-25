@@ -1,0 +1,5 @@
+# Only Go sources, go.mod/go.sum and SQL migrations are needed to build.
+bin/
+**/*.md
+Dockerfile
+.dockerignore
