@@ -1,0 +1,1096 @@
+---
+# Source: app/templates/networkpolicy.yaml
+# Ingress is denied by default for every pod in the stack namespace (app, and
+# the provider layer's Postgres, PgBouncer and Valkey), then opened only for:
+#   same namespace   app -> PgBouncer -> Postgres, app -> Valkey, backup jobs
+#   traefik          -> API pods (the only public entry)
+#   monitoring       Prometheus scrapes
+#   cnpg-system      operator -> Postgres instance manager
+#   keda             queue-length polling of Valkey
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Source: app/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# Source: app/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-api
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: 8080
+---
+# Source: app/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [monitoring, cnpg-system, keda]
+---
+# Source: app/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: prod
+---
+# Source: app/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+      app.kubernetes.io/instance: prod
+---
+# Source: app/templates/serviceaccount.yaml
+# The app needs no Kubernetes API access; the token is not mounted.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+automountServiceAccountToken: false
+---
+# Source: app/templates/backup.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backups
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Source: app/templates/api-services.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-stable
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  selector:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: prod
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Source: app/templates/api-services.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-canary
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  selector:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: prod
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Source: app/templates/backup.yaml
+# Runs before every Argo CD sync of this stack (i.e. before any new image or
+# migration lands). It deliberately fails the sync if the database exists but
+# cannot be dumped: no deploy without a fresh restore point.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: presync-backup
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: pg-dump
+          image: postgres:18.6-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              if [ -z "${MIGRATION_DATABASE_URL:-}" ]; then
+                echo "no database yet (secret app-env not created); nothing to back up"
+                exit 0
+              fi
+              ts=$(date -u +%Y%m%dT%H%M%SZ)
+              out="/backups/${PREFIX}-${ts}"
+              pg_dump -Fc "$MIGRATION_DATABASE_URL" -f "${out}.dump"
+              if [ -n "$(psql "$MIGRATION_DATABASE_URL" -tAc "select to_regclass('public.items')")" ]; then
+                psql "$MIGRATION_DATABASE_URL" -tA -F' ' -c "select count(*), md5(coalesce(string_agg(id::text || name, ',' order by id), '')) from items" > "${out}.counts"
+              else
+                echo "0 none" > "${out}.counts"
+              fi
+              echo "wrote ${out}.dump ($(wc -c < "${out}.dump") bytes) counts: $(cat "${out}.counts")"
+              # Retention: keep the newest N dumps of this kind.
+              ls -1t /backups/${PREFIX}-*.dump | tail -n +$((RETAIN + 1)) | while read -r f; do rm -f "$f" "${f%.dump}.counts"; done
+          env:
+            - { name: PREFIX, value: presync }
+            - { name: RETAIN, value: "24" }
+            - { name: HOME, value: /tmp }
+          envFrom:
+            - secretRef:
+                name: app-env
+                optional: true
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: backups, mountPath: /backups }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: backups
+          persistentVolumeClaim:
+            claimName: backups
+        - name: tmp
+          emptyDir: {}
+---
+# Source: app/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: pg-dump
+              image: postgres:18.6-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  if [ -z "${MIGRATION_DATABASE_URL:-}" ]; then
+                    echo "no database yet (secret app-env not created); nothing to back up"
+                    exit 0
+                  fi
+                  ts=$(date -u +%Y%m%dT%H%M%SZ)
+                  out="/backups/${PREFIX}-${ts}"
+                  pg_dump -Fc "$MIGRATION_DATABASE_URL" -f "${out}.dump"
+                  if [ -n "$(psql "$MIGRATION_DATABASE_URL" -tAc "select to_regclass('public.items')")" ]; then
+                    psql "$MIGRATION_DATABASE_URL" -tA -F' ' -c "select count(*), md5(coalesce(string_agg(id::text || name, ',' order by id), '')) from items" > "${out}.counts"
+                  else
+                    echo "0 none" > "${out}.counts"
+                  fi
+                  echo "wrote ${out}.dump ($(wc -c < "${out}.dump") bytes) counts: $(cat "${out}.counts")"
+                  # Retention: keep the newest N dumps of this kind.
+                  ls -1t /backups/${PREFIX}-*.dump | tail -n +$((RETAIN + 1)) | while read -r f; do rm -f "$f" "${f%.dump}.counts"; done
+              env:
+                - { name: PREFIX, value: backup }
+                - { name: RETAIN, value: "24" }
+                - { name: HOME, value: /tmp }
+              envFrom:
+                - secretRef:
+                    name: app-env
+                    optional: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { memory: 128Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backups
+            - name: tmp
+              emptyDir: {}
+---
+# Source: app/templates/api-services.yaml
+# Argo Rollouts points each Service at a ReplicaSet by injecting
+# rollouts-pod-template-hash into its selector; Traefik weights between them.
+---
+# Source: app/templates/pdb.yaml
+# Voluntary disruptions (node drain, upgrades) take at most one pod at a time.
+---
+# Source: app/templates/analysis-api.yaml
+# Canary gate for the API, evaluated on Traefik's view of the canary Service
+# only. Each metric is explicit about all three outcomes:
+#   success  -> keep going
+#   failure  -> after failureLimit+1 failures the Rollout aborts automatically
+#   neither (no data / NaN / too few requests) -> Inconclusive -> Rollout pauses
+# so "no traffic" is never mistaken for "healthy".
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: api-canary
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  metrics:
+    - name: canary-request-count
+      interval: 1m
+      initialDelay: 1m
+      successCondition: "len(result) > 0 && result[0] >= 20"
+      failureCondition: "false"
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            sum(increase(traefik_service_requests_total{service=~"app-prod-api-canary-.*"}[1m]))
+    - name: canary-success-rate
+      interval: 1m
+      initialDelay: 1m
+      failureLimit: 1
+      successCondition: "len(result) > 0 && result[0] >= 0.99"
+      failureCondition: "len(result) > 0 && result[0] < 0.99"
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-canary-.*",code!~"5.."}[1m]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-canary-.*"}[1m]))
+    - name: canary-p95-latency
+      interval: 1m
+      initialDelay: 1m
+      failureLimit: 1
+      successCondition: "len(result) > 0 && result[0] <= 0.4"
+      failureCondition: "len(result) > 0 && result[0] > 0.4"
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service=~"app-prod-api-canary-.*"}[1m])))
+---
+# Source: app/templates/analysis-worker.yaml
+# Canary gate for the worker. There is no HTTP traffic to split, so the canary
+# is a share of replicas, isolated in queries by its pod-template hash.
+#   failure ratio : jobs failed / jobs finished by canary pods (no jobs in the
+#                   window = no failures observed = pass; liveness is covered by
+#                   queue age)
+#   queue age     : the oldest pending job must not wait > 120 s
+#   restarts      : canary worker pods must not crash-loop
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: worker-canary
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  args:
+    - name: canary-hash
+  metrics:
+    - name: canary-job-failure-ratio
+      interval: 1m
+      initialDelay: 1m
+      failureLimit: 1
+      successCondition: "len(result) == 0 || isNaN(result[0]) || result[0] <= 0.02"
+      failureCondition: "len(result) > 0 && !isNaN(result[0]) && result[0] > 0.02"
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            sum(rate(jobs_processed_total{namespace="app-prod",rollouts_pod_template_hash="{{args.canary-hash}}",result="failed"}[2m]))
+            /
+            sum(rate(jobs_processed_total{namespace="app-prod",rollouts_pod_template_hash="{{args.canary-hash}}"}[2m]))
+    - name: queue-oldest-job-age
+      interval: 1m
+      initialDelay: 1m
+      failureLimit: 1
+      successCondition: "len(result) > 0 && result[0] < 120"
+      failureCondition: "len(result) > 0 && result[0] >= 120"
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            max(queue_oldest_job_age_seconds{namespace="app-prod"})
+    - name: canary-restarts
+      interval: 1m
+      initialDelay: 1m
+      failureLimit: 0
+      successCondition: "len(result) == 0 || result[0] == 0"
+      failureCondition: "len(result) > 0 && result[0] > 0"
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            sum(increase(kube_pod_container_status_restarts_total{namespace="app-prod",container="worker"}[2m])
+              * on (namespace, pod) group_left
+              max by (namespace, pod) (kube_pod_labels{namespace="app-prod",label_rollouts_pod_template_hash="{{args.canary-hash}}"}))
+---
+# Source: app/templates/externalsecret.yaml
+# Provider contract item 3 -> Secret app-env (DATABASE_URL,
+# MIGRATION_DATABASE_URL, REDIS_URL). The store is named, not described:
+# OpenBao locally, AWS Secrets Manager on AWS (ADR-009).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: app-env
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: platform-secrets
+  target:
+    name: app-env
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: stacks/prod/app
+---
+# Source: app/templates/ingressroute.yaml
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`prod.localtest.me`)
+      kind: Rule
+      services:
+        - name: api
+          kind: TraefikService
+---
+# Source: app/templates/monitoring.yaml
+# Scrape config for this stack. PodMonitors (not ServiceMonitors) because the
+# stable and canary Services can select the same pods, which would double-count.
+# rollouts-pod-template-hash is copied onto every series so analysis can
+# isolate canary pods.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: prod
+  podTargetLabels: [rollouts-pod-template-hash]
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+# Source: app/templates/monitoring.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+      app.kubernetes.io/instance: prod
+  podTargetLabels: [rollouts-pod-template-hash]
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+---
+# Source: app/templates/prometheusrule-slo.yaml
+# SLOs for this stack, measured at the edge (Traefik):
+#   availability = non-5xx / all requests
+#   latency      = requests answered in <= 400 ms / all requests
+# Multi-window, multi-burn-rate alerts (Google SRE workbook, ADR-023):
+#   page   : 14.4x budget burn over 1h AND 5m, or 6x over 6h AND 30m
+#   ticket : 1x over 3d
+# Objective 0.999 -> error budget 0.001.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: slo
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  groups:
+    - name: zdp-sli-prod
+      interval: 30s
+      rules:
+        - record: zdp:sli_availability:ratio_rate5m
+          expr: |
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*",code!~"5.."}[5m]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*"}[5m]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_latency_good:ratio_rate5m
+          expr: |
+            sum(rate(traefik_service_request_duration_seconds_bucket{service=~"app-prod-api-(stable|canary)-.*",le="0.4"}[5m]))
+            /
+            sum(rate(traefik_service_request_duration_seconds_count{service=~"app-prod-api-(stable|canary)-.*"}[5m]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_availability:ratio_rate30m
+          expr: |
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*",code!~"5.."}[30m]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*"}[30m]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_latency_good:ratio_rate30m
+          expr: |
+            sum(rate(traefik_service_request_duration_seconds_bucket{service=~"app-prod-api-(stable|canary)-.*",le="0.4"}[30m]))
+            /
+            sum(rate(traefik_service_request_duration_seconds_count{service=~"app-prod-api-(stable|canary)-.*"}[30m]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_availability:ratio_rate1h
+          expr: |
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*",code!~"5.."}[1h]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*"}[1h]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_latency_good:ratio_rate1h
+          expr: |
+            sum(rate(traefik_service_request_duration_seconds_bucket{service=~"app-prod-api-(stable|canary)-.*",le="0.4"}[1h]))
+            /
+            sum(rate(traefik_service_request_duration_seconds_count{service=~"app-prod-api-(stable|canary)-.*"}[1h]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_availability:ratio_rate6h
+          expr: |
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*",code!~"5.."}[6h]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*"}[6h]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_latency_good:ratio_rate6h
+          expr: |
+            sum(rate(traefik_service_request_duration_seconds_bucket{service=~"app-prod-api-(stable|canary)-.*",le="0.4"}[6h]))
+            /
+            sum(rate(traefik_service_request_duration_seconds_count{service=~"app-prod-api-(stable|canary)-.*"}[6h]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_availability:ratio_rate3d
+          expr: |
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*",code!~"5.."}[3d]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*"}[3d]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+        - record: zdp:sli_latency_good:ratio_rate3d
+          expr: |
+            sum(rate(traefik_service_request_duration_seconds_bucket{service=~"app-prod-api-(stable|canary)-.*",le="0.4"}[3d]))
+            /
+            sum(rate(traefik_service_request_duration_seconds_count{service=~"app-prod-api-(stable|canary)-.*"}[3d]))
+          labels:
+            namespace: app-prod
+            stack: prod
+            tier: shared
+    - name: zdp-slo-alerts-prod
+      rules:
+        - alert: ZdpErrorBudgetBurnPage
+          expr: |
+            (
+              (1 - zdp:sli_availability:ratio_rate1h{namespace="app-prod"}) > (14.4 * 0.001)
+              and
+              (1 - zdp:sli_availability:ratio_rate5m{namespace="app-prod"}) > (14.4 * 0.001)
+            )
+            or
+            (
+              (1 - zdp:sli_availability:ratio_rate6h{namespace="app-prod"}) > (6 * 0.001)
+              and
+              (1 - zdp:sli_availability:ratio_rate30m{namespace="app-prod"}) > (6 * 0.001)
+            )
+          labels:
+            severity: page
+            sli: availability
+            stack: prod
+            tier: shared
+            objective: "0.999"
+          annotations:
+            summary: "prod: availability error budget burning fast"
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+        - alert: ZdpErrorBudgetBurnTicket
+          expr: |
+            (1 - zdp:sli_availability:ratio_rate3d{namespace="app-prod"}) > 0.001
+          labels:
+            severity: ticket
+            sli: availability
+            stack: prod
+            tier: shared
+            objective: "0.999"
+          annotations:
+            summary: "prod: availability error budget exhausted over 3 days"
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+        - alert: ZdpErrorBudgetBurnPage
+          expr: |
+            (
+              (1 - zdp:sli_latency_good:ratio_rate1h{namespace="app-prod"}) > (14.4 * 0.001)
+              and
+              (1 - zdp:sli_latency_good:ratio_rate5m{namespace="app-prod"}) > (14.4 * 0.001)
+            )
+            or
+            (
+              (1 - zdp:sli_latency_good:ratio_rate6h{namespace="app-prod"}) > (6 * 0.001)
+              and
+              (1 - zdp:sli_latency_good:ratio_rate30m{namespace="app-prod"}) > (6 * 0.001)
+            )
+          labels:
+            severity: page
+            sli: latency_good
+            stack: prod
+            tier: shared
+            objective: "0.999"
+          annotations:
+            summary: "prod: latency_good error budget burning fast"
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+        - alert: ZdpErrorBudgetBurnTicket
+          expr: |
+            (1 - zdp:sli_latency_good:ratio_rate3d{namespace="app-prod"}) > 0.001
+          labels:
+            severity: ticket
+            sli: latency_good
+            stack: prod
+            tier: shared
+            objective: "0.999"
+          annotations:
+            summary: "prod: latency_good error budget exhausted over 3 days"
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+---
+# Source: app/templates/api-rollout.yaml
+# API: canary with Traefik traffic splitting, gated by Prometheus analysis of
+# edge metrics; automatic abort returns 100% of traffic to stable (ADR-011).
+# spec.replicas is intentionally absent: KEDA owns the replica count.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: prod
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/instance: prod
+        app.kubernetes.io/part-of: zero-downtime-platform
+        app.kubernetes.io/managed-by: Helm
+        zdp/stack: prod
+        zdp/tier: shared
+        zdp/region: eu-central-1
+    spec:
+      serviceAccountName: app
+      automountServiceAccountToken: false
+      priorityClassName: app
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+              app.kubernetes.io/instance: prod
+      containers:
+        - name: api
+          image: ghcr.io/govind-kandale-1/zero-downtime-platform@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: app-env
+          env:
+            - name: MAX_INFLIGHT
+              value: "8"
+            - name: WORK_LATENCY_MS
+              value: "40"
+          # Migrations run at boot: startup probe tolerates up to 60 s before
+          # liveness takes over; readiness keeps traffic away until /readyz is 200.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          # Keep serving while endpoint removal propagates to Traefik, then the
+          # app's own SIGTERM handling drains in-flight requests.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 96Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+  strategy:
+    canary:
+      stableService: api-stable
+      canaryService: api-canary
+      trafficRouting:
+        traefik:
+          weightedTraefikServiceName: api
+      analysis:
+        templates:
+          - templateName: api-canary
+        startingStep: 1
+      steps:
+        - setWeight: 10
+        - pause: { duration: 120s }
+        - setWeight: 25
+        - pause: { duration: 120s }
+        - setWeight: 50
+        - pause: { duration: 120s }
+---
+# Source: app/templates/worker-rollout.yaml
+# Worker: a gated rolling update - a Rollouts canary without traffic routing,
+# so "weight" is the share of replicas - with automatic abort on analysis
+# failure (ADR-012). A plain Deployment would roll the same way but could not
+# roll itself back. spec.replicas is absent: KEDA owns it.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+      app.kubernetes.io/instance: prod
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker
+        app.kubernetes.io/instance: prod
+        app.kubernetes.io/part-of: zero-downtime-platform
+        app.kubernetes.io/managed-by: Helm
+        zdp/stack: prod
+        zdp/tier: shared
+        zdp/region: eu-central-1
+    spec:
+      serviceAccountName: app
+      automountServiceAccountToken: false
+      priorityClassName: app
+      # Longest job is 60 s: SIGTERM -> stop claiming -> finish the job in hand.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: worker
+              app.kubernetes.io/instance: prod
+      containers:
+        - name: worker
+          image: ghcr.io/govind-kandale-1/zero-downtime-platform@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          command: ["/worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - secretRef:
+                name: app-env
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 20m, memory: 24Mi }
+            limits: { memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+  strategy:
+    canary:
+      maxSurge: "25%"
+      maxUnavailable: 0
+      analysis:
+        templates:
+          - templateName: worker-canary
+        args:
+          - name: canary-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+        startingStep: 1
+      steps:
+        - setWeight: 25
+        - pause: { duration: 180s }
+        - setWeight: 50
+        - pause: { duration: 180s }
+---
+# Source: app/templates/scaledobject-api.yaml
+# API autoscaling on request rate per pod, measured at the edge (ADR-013).
+# Scale-up has no stabilisation window and may double (or add 8 pods) every
+# 15 s; scale-down waits 5 minutes and sheds at most 20% per minute.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: api
+  minReplicaCount: 3
+  maxReplicaCount: 40
+  pollingInterval: 10
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+            - type: Pods
+              value: 8
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 20
+              periodSeconds: 60
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+        # AverageValue: desired replicas = total req/s / threshold.
+        query: sum(rate(traefik_service_requests_total{service=~"app-prod-api-(stable|canary)-.*"}[1m]))
+        threshold: "70"
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+---
+# Source: app/templates/scaledobject-worker.yaml
+# Worker autoscaling on queue depth (ADR-013): desired = pending jobs / listLength.
+# Scale-in is safe because each worker finishes its job on SIGTERM within the
+# 90 s grace period, and a killed worker's job is reaped back to the queue.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: worker
+  minReplicaCount: 2
+  maxReplicaCount: 120
+  pollingInterval: 10
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+            - type: Pods
+              value: 10
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 20
+              periodSeconds: 60
+  triggers:
+    - type: redis
+      metadata:
+        address: valkey.app-prod.svc:6379
+        listName: jobs
+        listLength: "5"
+---
+# Source: app/templates/monitoring.yaml
+# redis_exporter sidecar run by the provider layer next to Valkey (local only).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: valkey
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  endpoints:
+    - port: metrics
+      interval: 15s
+---
+# Source: app/templates/traefikservice.yaml
+# The weighted split Argo Rollouts drives during a canary. Argo CD must ignore
+# changes to the weights (ignoreDifferences in the stack ApplicationSet), or
+# self-heal would fight the Rollouts controller mid-canary.
+apiVersion: traefik.io/v1alpha1
+kind: TraefikService
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/part-of: zero-downtime-platform
+    app.kubernetes.io/managed-by: Helm
+    zdp/stack: prod
+    zdp/tier: shared
+    zdp/region: eu-central-1
+spec:
+  weighted:
+    services:
+      - name: api-stable
+        port: 80
+        weight: 100
+      - name: api-canary
+        port: 80
+        weight: 0

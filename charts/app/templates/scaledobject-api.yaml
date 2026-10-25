@@ -1,0 +1,48 @@
+# API autoscaling on request rate per pod, measured at the edge (ADR-013).
+# Scale-up has no stabilisation window and may double (or add 8 pods) every
+# 15 s; scale-down waits 5 minutes and sheds at most 20% per minute.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: api
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: api
+  minReplicaCount: {{ .Values.api.minReplicas }}
+  maxReplicaCount: {{ .Values.api.maxReplicas }}
+  pollingInterval: 10
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+            - type: Pods
+              value: 8
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 20
+              periodSeconds: 60
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.prometheus.url }}
+        # AverageValue: desired replicas = total req/s / threshold.
+        query: sum(rate(traefik_service_requests_total{service=~"{{ include "app.traefikServices" . }}"}[1m]))
+        threshold: {{ .Values.api.rpsPerPod | quote }}
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.api.cpuUtilization | quote }}

@@ -1,0 +1,52 @@
+# Scrape config for this stack. PodMonitors (not ServiceMonitors) because the
+# stable and canary Services can select the same pods, which would double-count.
+# rollouts-pod-template-hash is copied onto every series so analysis can
+# isolate canary pods.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: api
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "app.selector" (dict "component" "api" "root" .) | nindent 6 }}
+  podTargetLabels: [rollouts-pod-template-hash]
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: worker
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "app.selector" (dict "component" "worker" "root" .) | nindent 6 }}
+  podTargetLabels: [rollouts-pod-template-hash]
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+{{- if .Values.valkeyMetrics }}
+---
+# redis_exporter sidecar run by the provider layer next to Valkey (local only).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: valkey
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  endpoints:
+    - port: metrics
+      interval: 15s
+{{- end }}

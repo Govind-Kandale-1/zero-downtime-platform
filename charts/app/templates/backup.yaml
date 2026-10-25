@@ -1,0 +1,57 @@
+{{- if eq .Values.backup.mode "pgdump" }}
+{{- /*
+Local backups (ADR-019): an hourly CronJob plus an Argo CD PreSync hook that
+dumps the database before every sync, so a bad migration can be rolled back by
+restore. Each dump gets a .counts file (row count + md5 over the rows) that the
+restore test compares against. On AWS (backup.mode: managed) RDS automated
+backups + point-in-time recovery replace all of this.
+*/ -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backups
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          {{- include "app.backupPod" (dict "root" . "prefix" "backup") | nindent 10 }}
+---
+# Runs before every Argo CD sync of this stack (i.e. before any new image or
+# migration lands). It deliberately fails the sync if the database exists but
+# cannot be dumped: no deploy without a fresh restore point.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: presync-backup
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      {{- include "app.backupPod" (dict "root" . "prefix" "presync") | nindent 6 }}
+{{- end }}

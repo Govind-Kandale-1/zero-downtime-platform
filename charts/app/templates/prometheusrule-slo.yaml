@@ -1,0 +1,81 @@
+{{- $svc := include "app.traefikServices" . }}
+{{- $obj := include "app.objective" . }}
+{{- $budget := subf 1.0 (float64 $obj) }}
+{{- $ns := .Values.stack.namespace }}
+# SLOs for this stack, measured at the edge (Traefik):
+#   availability = non-5xx / all requests
+#   latency      = requests answered in <= 400 ms / all requests
+# Multi-window, multi-burn-rate alerts (Google SRE workbook, ADR-023):
+#   page   : 14.4x budget burn over 1h AND 5m, or 6x over 6h AND 30m
+#   ticket : 1x over 3d
+# Objective {{ $obj }} -> error budget {{ $budget }}.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: slo
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: {{ printf "zdp-sli-%s" .Values.stack.name }}
+      interval: 30s
+      rules:
+        {{- range $w := list "5m" "30m" "1h" "6h" "3d" }}
+        - record: {{ printf "zdp:sli_availability:ratio_rate%s" $w }}
+          expr: |
+            sum(rate(traefik_service_requests_total{service=~"{{ $svc }}",code!~"5.."}[{{ $w }}]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"{{ $svc }}"}[{{ $w }}]))
+          labels:
+            namespace: {{ $ns }}
+            stack: {{ $.Values.stack.name }}
+            tier: {{ $.Values.stack.tier }}
+        - record: {{ printf "zdp:sli_latency_good:ratio_rate%s" $w }}
+          expr: |
+            sum(rate(traefik_service_request_duration_seconds_bucket{service=~"{{ $svc }}",le="0.4"}[{{ $w }}]))
+            /
+            sum(rate(traefik_service_request_duration_seconds_count{service=~"{{ $svc }}"}[{{ $w }}]))
+          labels:
+            namespace: {{ $ns }}
+            stack: {{ $.Values.stack.name }}
+            tier: {{ $.Values.stack.tier }}
+        {{- end }}
+    - name: {{ printf "zdp-slo-alerts-%s" .Values.stack.name }}
+      rules:
+        {{- range $sli := list "availability" "latency_good" }}
+        {{- $r := printf "zdp:sli_%s:ratio_rate" $sli }}
+        - alert: ZdpErrorBudgetBurnPage
+          expr: |
+            (
+              (1 - {{ $r }}1h{namespace="{{ $ns }}"}) > (14.4 * {{ $budget }})
+              and
+              (1 - {{ $r }}5m{namespace="{{ $ns }}"}) > (14.4 * {{ $budget }})
+            )
+            or
+            (
+              (1 - {{ $r }}6h{namespace="{{ $ns }}"}) > (6 * {{ $budget }})
+              and
+              (1 - {{ $r }}30m{namespace="{{ $ns }}"}) > (6 * {{ $budget }})
+            )
+          labels:
+            severity: page
+            sli: {{ $sli }}
+            stack: {{ $.Values.stack.name }}
+            tier: {{ $.Values.stack.tier }}
+            objective: {{ $obj | quote }}
+          annotations:
+            summary: {{ printf "%s: %s error budget burning fast" $.Values.stack.name $sli | quote }}
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+        - alert: ZdpErrorBudgetBurnTicket
+          expr: |
+            (1 - {{ $r }}3d{namespace="{{ $ns }}"}) > {{ $budget }}
+          labels:
+            severity: ticket
+            sli: {{ $sli }}
+            stack: {{ $.Values.stack.name }}
+            tier: {{ $.Values.stack.tier }}
+            objective: {{ $obj | quote }}
+          annotations:
+            summary: {{ printf "%s: %s error budget exhausted over 3 days" $.Values.stack.name $sli | quote }}
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+        {{- end }}

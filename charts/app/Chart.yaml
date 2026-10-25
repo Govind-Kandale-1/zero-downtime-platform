@@ -1,0 +1,9 @@
+apiVersion: v2
+name: app
+description: One template for every stack (shared env stacks and dedicated tenants) - API + worker with canary, autoscaling, SLOs and backups.
+type: application
+# Overridden by the release pipeline (0.1.<run_number>); the chart is published
+# to oci://ghcr.io/govind-kandale-1/charts and promoted with the image digest.
+version: 0.1.0
+appVersion: "stand-in"
+kubeVersion: ">=1.30.0-0"

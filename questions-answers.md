@@ -105,6 +105,19 @@ The cost is that the pipeline can't directly "see" the deployment. My gates read
 **Follow-ups:** "Why Argo CD over Flux?" Both are fine. Argo's UI and native Argo Rollouts integration (abort/promote, rollout health) matter for operating canaries, and ApplicationSets fan out tenants from files.
 **Point to:** ADR-010.
 
+### Q: Why canary and not blue/green for the API?
+**A:** Blue/green needs a second full fleet during cutover. At peak that's about 40 extra pods, and the cutover is all-or-nothing. It also doesn't protect the database, because both colours share one schema. A canary exposes 10% → 25% → 50% of traffic, checks edge metrics at each step, and aborts automatically. The blast radius of a bad release is about 10–25% of requests for 1–2 minutes, which I measured.
+**Follow-ups:** "What exactly triggers the abort?" Two failed 1-minute measurements of canary success rate < 99% or p95 > 400 ms, read from Traefik for the canary Service only. Fewer than 20 requests per minute counts as inconclusive, which pauses the rollout and never passes it.
+**Point to:** ADR-011, `charts/app/templates/analysis-api.yaml`.
+
+### Q: How does the worker get a canary when it has no traffic?
+**A:** It uses an Argo Rollouts canary without traffic routing, so the "weight" is the share of replicas: a rolling update that can stop and roll back on its own. The analysis isolates canary pods by their pod-template hash and checks three things: the job failure ratio, the age of the oldest queued job, and restarts. A plain Deployment would roll the same way but can't abort on a metric.
+**Point to:** ADR-012.
+
+### Q: Why gate on Traefik metrics and not the app's?
+**A:** The app is a black box. I don't know its metric names, and every tenant's app might expose different ones. The ingress sees every request, with status code and latency, for every service, in one consistent format. The same signal drives canary gates, autoscaling and SLOs.
+**Point to:** ADR-011, ADR-023.
+
 ### Q: Why is there synthetic traffic? Doesn't it distort your SLIs?
 **A:** Argo Rollouts treats "no data" as inconclusive and pauses the rollout. Dev, staging and the tenant stacks get no user traffic locally, so without it every canary would stall. A tiny generator sends 10 req/s per stack through the real ingress. Requests carry `X-Synthetic: 1`, so user-facing dashboards can exclude them, while canary analysis deliberately includes them. It also works as a black-box probe: if synthetic requests fail, the stack is broken whether or not anyone noticed.
 **Follow-ups:** "Is 1 req/s to a 10% canary enough?" It's enough to catch a gross failure (the demo bug fails 30% of requests) within a minute, not a subtle regression. That's what production traffic, longer steps and a minimum-request-count guard are for.
@@ -131,6 +144,34 @@ Running `plan` after the provider layer was applied returns 0.
 
 **Point to:** `app/internal/worker/code-review.md`, ADR-006.
 
+### Q: Walk me through a zero-downtime API pod shutdown.
+**A:**
+1. Kubernetes sends the pod SIGTERM and starts removing it from Service endpoints.
+2. In parallel, `preStop: sleep 5` keeps the container serving while Traefik notices the endpoint change. This is the window where requests are still routed to the pod.
+3. Then the app sees SIGTERM. It fails `/readyz`, waits its own 5 s, and calls `http.Server.Shutdown`, which finishes in-flight requests (up to 20 s).
+4. The 30 s grace period covers all of it.
+
+A PDB limits voluntary disruptions to one pod at a time, and topology spread keeps replicas on different nodes.
+**Follow-ups:** "Why a native sleep hook?" The image is distroless, with no shell, so `exec: sleep` is impossible. Kubernetes 1.30+ has `preStop.sleep`.
+**Point to:** `charts/app/templates/api-rollout.yaml`, `app/cmd/api/code-review.md`.
+
+### Q: What if the real black-box app doesn't drain on SIGTERM?
+**A:** Then the platform limits the damage, but it can't prevent it.
+- **API:** `preStop` still holds the pod for 5 s while it leaves the load balancer. After that, a non-draining app drops whatever is in flight when it exits, typically a handful of requests, which clients should retry.
+- **Worker:** a non-draining worker is killed at the 90 s grace period. Its job is still in its processing list, and the reaper returns it to the queue within about 30 s. The job is late and runs twice, never lost. That's why idempotency is listed as an assumption.
+
+**Follow-ups:** "So what do you ask the app team for?" Three things: SIGTERM handling, idempotent jobs, and ideally a migrate-only mode.
+**Point to:** ADR-006, ADR-012.
+
+### Q: You rolled back the image, but the migration already ran. Now what?
+**A:** It depends on what the migration did.
+- **Expand migration** (added a nullable column): nothing to do. The old version runs fine on the expanded schema, because every release must be N-1 compatible. My bad-release demo shows exactly this.
+- **Breaking migration shipped by mistake:** fix forward first, because it loses no data. As a last resort, restore the dump taken automatically by the PreSync hook just before that sync, or use point-in-time recovery on AWS. That restore has an explicit data-loss window.
+
+No down-migrations: they're rarely tested and can't restore dropped data.
+**Follow-ups:** "How do you stop a breaking migration shipping?" Make expand/contract part of code review, and run migrations against a prod-like copy in staging. The platform makes mistakes recoverable, not impossible.
+**Point to:** ADR-018, `docs/runbooks/rollback-after-migration.md`.
+
 ### Q: Is job processing exactly-once?
 **A:** No, it's at-least-once, by design. A worker that finishes a job but dies before acknowledging it will have that job re-run. Exactly-once would need a dedupe store keyed by job id and transactional side effects. The honest platform answer is "make jobs idempotent". That is listed as an assumption about the black box.
 **Point to:** ADR-006.
@@ -146,6 +187,15 @@ Running `plan` after the provider layer was applied returns 0.
 **Follow-ups:** "Why not size for 60 s?" That gives ~333 workers, mostly idle. Throughput depends on the mean.
 **Point to:** ADR-024, `docs/capacity.md`.
 
+### Q: Why KEDA on request rate instead of a CPU-based HPA?
+**A:** The API is I/O-bound. It waits on the database, so pods hit their concurrency limit and latency climbs long before CPU does. CPU lags the actual problem. KEDA scales on Traefik's request rate divided by a per-pod target (70% of measured capacity), with CPU as a safety net. Scale-up has no stabilization and can double every 15 s. Scale-down waits 5 minutes and sheds at most 20% per minute, so we don't flap.
+**Follow-ups:** "How long to reach 15x?" In-cluster, about 10 s polling plus 15 s per HPA step, doubling each step, plus a few seconds of pod start: 1–2 minutes. On AWS, add about 60–90 s for Karpenter nodes, hidden by over-provisioning pods.
+**Point to:** ADR-013, `charts/app/templates/scaledobject-api.yaml`.
+
+### Q: Doesn't scaling workers down kill jobs?
+**A:** No. KEDA scale-in sends SIGTERM like any other stop: the worker stops claiming and finishes its current job within the 90 s grace period. If it's killed anyway, the reaper requeues the job. Scale-down is also damped (a 5-minute window, at most −20% per minute), so a brief dip in the queue doesn't trigger a mass stop.
+**Point to:** ADR-006, ADR-013.
+
 ### Q: How do you measure queue *age* when the worker is a black box?
 **A:** List length is always available from outside: redis_exporter reads `LLEN`, and that's what KEDA scales on. Age needs a timestamp inside each job. The stand-in puts `enqueued_at` in the payload and exports `queue_oldest_job_age_seconds` by reading the oldest item. For the real app, that's an assumption to confirm. If its payloads have no timestamp, you either add one at the producer or fall back to depth ÷ throughput as an estimated wait.
 **Point to:** `app/internal/queue/code-review.md`.
@@ -159,7 +209,14 @@ Running `plan` after the provider layer was applied returns 0.
 *(added in later steps)*
 
 ## 8. Operations
-*(added in later steps)*
+
+### Q: Explain your SLO alerting.
+**A:** I use two SLIs per stack, both measured at the edge: availability (non-5xx share) and latency (share of requests within ≤ 400 ms). The error budget is 0.1% for shared and 0.05% for dedicated: 43 and 22 minutes a month. I page on a 14.4× burn over 1h AND 5m (2% of the month's budget gone in an hour), or 6× over 6h AND 30m. A 1× burn over 3 days opens a ticket. Requiring both windows makes the page fire quickly and clear quickly once the problem is fixed.
+**Follow-ups:**
+- "Why not 'error rate > 1%'?" A static threshold isn't tied to the budget. It pages on blips that don't matter and misses slow burns that do.
+- "Per-tenant?" Every rule is labelled with stack and tier, and shared tenants get per-host router metrics.
+
+**Point to:** ADR-023, `charts/app/templates/prometheusrule-slo.yaml`.
 
 ## 9. Cost and plan
 *(added in later steps)*

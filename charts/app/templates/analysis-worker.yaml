@@ -1,0 +1,54 @@
+# Canary gate for the worker. There is no HTTP traffic to split, so the canary
+# is a share of replicas, isolated in queries by its pod-template hash.
+#   failure ratio : jobs failed / jobs finished by canary pods (no jobs in the
+#                   window = no failures observed = pass; liveness is covered by
+#                   queue age)
+#   queue age     : the oldest pending job must not wait > 120 s
+#   restarts      : canary worker pods must not crash-loop
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: worker-canary
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  args:
+    - name: canary-hash
+  metrics:
+    - name: canary-job-failure-ratio
+      interval: {{ .Values.analysis.interval }}
+      initialDelay: {{ .Values.analysis.initialDelay }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      successCondition: "len(result) == 0 || isNaN(result[0]) || result[0] <= {{ .Values.analysis.workerFailureRatio }}"
+      failureCondition: "len(result) > 0 && !isNaN(result[0]) && result[0] > {{ .Values.analysis.workerFailureRatio }}"
+      provider:
+        prometheus:
+          address: {{ .Values.prometheus.url }}
+          query: |
+            sum(rate(jobs_processed_total{namespace="{{ .Values.stack.namespace }}",rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}",result="failed"}[2m]))
+            /
+            sum(rate(jobs_processed_total{namespace="{{ .Values.stack.namespace }}",rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}"}[2m]))
+    - name: queue-oldest-job-age
+      interval: {{ .Values.analysis.interval }}
+      initialDelay: {{ .Values.analysis.initialDelay }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      successCondition: "len(result) > 0 && result[0] < {{ .Values.analysis.workerMaxQueueAgeSeconds }}"
+      failureCondition: "len(result) > 0 && result[0] >= {{ .Values.analysis.workerMaxQueueAgeSeconds }}"
+      provider:
+        prometheus:
+          address: {{ .Values.prometheus.url }}
+          query: |
+            max(queue_oldest_job_age_seconds{namespace="{{ .Values.stack.namespace }}"})
+    - name: canary-restarts
+      interval: {{ .Values.analysis.interval }}
+      initialDelay: {{ .Values.analysis.initialDelay }}
+      failureLimit: 0
+      successCondition: "len(result) == 0 || result[0] == 0"
+      failureCondition: "len(result) > 0 && result[0] > 0"
+      provider:
+        prometheus:
+          address: {{ .Values.prometheus.url }}
+          query: |
+            sum(increase(kube_pod_container_status_restarts_total{namespace="{{ .Values.stack.namespace }}",container="worker"}[2m])
+              * on (namespace, pod) group_left
+              max by (namespace, pod) (kube_pod_labels{namespace="{{ .Values.stack.namespace }}",label_rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}"}))

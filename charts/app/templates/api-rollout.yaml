@@ -1,0 +1,89 @@
+{{- $size := fromYaml (include "app.size" .) }}
+# API: canary with Traefik traffic splitting, gated by Prometheus analysis of
+# edge metrics; automatic abort returns 100% of traffic to stable (ADR-011).
+# spec.replicas is intentionally absent: KEDA owns the replica count.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "app.selector" (dict "component" "api" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.selector" (dict "component" "api" "root" .) | nindent 8 }}
+        {{- include "app.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: app
+      automountServiceAccountToken: false
+      priorityClassName: app
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- include "app.podSecurity" . | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "app.selector" (dict "component" "api" "root" .) | nindent 14 }}
+      containers:
+        - name: api
+          image: {{ include "app.image" . }}
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: app-env
+          env:
+            - name: MAX_INFLIGHT
+              value: {{ .Values.api.maxInflight | quote }}
+            - name: WORK_LATENCY_MS
+              value: {{ .Values.api.workLatencyMs | quote }}
+          # Migrations run at boot: startup probe tolerates up to 60 s before
+          # liveness takes over; readiness keeps traffic away until /readyz is 200.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          # Keep serving while endpoint removal propagates to Traefik, then the
+          # app's own SIGTERM handling drains in-flight requests.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ .Values.api.preStopSleepSeconds }}
+          resources:
+            requests: { cpu: {{ $size.api.cpu }}, memory: {{ $size.api.memory }} }
+            limits: { memory: {{ $size.api.memoryLimit }} }
+          securityContext:
+            {{- include "app.containerSecurity" . | nindent 12 }}
+  strategy:
+    canary:
+      stableService: api-stable
+      canaryService: api-canary
+      trafficRouting:
+        traefik:
+          weightedTraefikServiceName: api
+      analysis:
+        templates:
+          - templateName: api-canary
+        startingStep: 1
+      steps:
+        {{- range .Values.api.canarySteps }}
+        - setWeight: {{ . }}
+        - pause: { duration: {{ printf "%ds" (int $.Values.api.pauseSeconds) }} }
+        {{- end }}

@@ -1,0 +1,33 @@
+# charts/app/ — code review
+
+**Purpose:** **the one template** used for every stack: dev, staging, the shared prod stack, and every dedicated tenant. Shared and dedicated stacks differ only in values (`gitops/stacks/*.yaml`, or the tenant ApplicationSet), never in templates.
+
+| File | What it is |
+|---|---|
+| `Chart.yaml` | `app` 0.1.0. CI overrides the version to `0.1.<run_number>` and publishes it to `oci://ghcr.io/govind-kandale-1/charts`, so the chart is promoted together with the image (ADR-014). `kubeVersion >= 1.30` because of the native `preStop.sleep` hook. |
+| `values.yaml` | Defaults for one stack (see the table below) |
+| `values.schema.json` | Rejects a render without `image.digest` matching `sha256:<64 hex>` (no tags, ever); validates the name pattern, size, tier and SLO enums |
+| `templates/` | 13 templates plus 2 partials (see `templates/code-review.md`) |
+| `tests/` | Render assertions, kubeconform and promtool (see `tests/code-review.md`) |
+
+**Key values and why:**
+
+| Value | Default | Why |
+|---|---|---|
+| `api.canarySteps` / `pauseSeconds` | 10, 25, 50 / 120 s (60 s locally) | Small blast radius first; each pause gets at least one 1-minute analysis measurement |
+| `api.minReplicas` | 3 | One per zone, so losing a zone (or a node locally) leaves capacity |
+| `api.rpsPerPod` | 70 (placeholder) | Set to 70% of the measured per-pod capacity once the load test calibrates it |
+| `worker.terminationGracePeriodSeconds` | 90 | Longer than the 60 s maximum job, so draining never kills work |
+| `worker.maxReplicas` | 120 | Little's law at 5.56 jobs/s × 10 s ≈ 56, with headroom (ADR-024) |
+| `analysis.*` | success ≥ 99%, p95 ≤ 0.4 s, ≥ 20 requests/min | Matches the brief's p95 target; below the minimum count the result is *inconclusive*, never a pass |
+| `backup.mode` | `pgdump` | Local CNPG. `managed` means RDS automated backups + PITR on AWS |
+
+**Assumptions about the platform:**
+- Traefik labels weighted child services as `<namespace>-<service>-<port>@kubernetescrd`, and its ServiceMonitor uses `honorLabels: true`, so `service=` is Traefik's label. This is checked live during the first deployment.
+- The stack Application must ignore drift on `TraefikService` weights (`ignoreDifferences`). Otherwise Argo CD self-heal would reset the weights Argo Rollouts sets mid-canary.
+
+**Verify:**
+- `bash charts/app/tests/render_test.sh`: 23 checks.
+- `helm lint charts/app -f charts/app/tests/values-prod.yaml --kube-version 1.34.0`.
+
+**Label:** RUN-LOCAL (stand-in).

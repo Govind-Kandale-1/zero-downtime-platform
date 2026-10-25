@@ -1,0 +1,50 @@
+# Canary gate for the API, evaluated on Traefik's view of the canary Service
+# only. Each metric is explicit about all three outcomes:
+#   success  -> keep going
+#   failure  -> after failureLimit+1 failures the Rollout aborts automatically
+#   neither (no data / NaN / too few requests) -> Inconclusive -> Rollout pauses
+# so "no traffic" is never mistaken for "healthy".
+{{- $canary := include "app.traefikCanary" . }}
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: api-canary
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  metrics:
+    - name: canary-request-count
+      interval: {{ .Values.analysis.interval }}
+      initialDelay: {{ .Values.analysis.initialDelay }}
+      successCondition: "len(result) > 0 && result[0] >= {{ .Values.analysis.minRequests }}"
+      failureCondition: "false"
+      provider:
+        prometheus:
+          address: {{ .Values.prometheus.url }}
+          query: |
+            sum(increase(traefik_service_requests_total{service=~"{{ $canary }}"}[1m]))
+    - name: canary-success-rate
+      interval: {{ .Values.analysis.interval }}
+      initialDelay: {{ .Values.analysis.initialDelay }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      successCondition: "len(result) > 0 && result[0] >= {{ .Values.analysis.successRate }}"
+      failureCondition: "len(result) > 0 && result[0] < {{ .Values.analysis.successRate }}"
+      provider:
+        prometheus:
+          address: {{ .Values.prometheus.url }}
+          query: |
+            sum(rate(traefik_service_requests_total{service=~"{{ $canary }}",code!~"5.."}[1m]))
+            /
+            sum(rate(traefik_service_requests_total{service=~"{{ $canary }}"}[1m]))
+    - name: canary-p95-latency
+      interval: {{ .Values.analysis.interval }}
+      initialDelay: {{ .Values.analysis.initialDelay }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      successCondition: "len(result) > 0 && result[0] <= {{ .Values.analysis.p95Seconds }}"
+      failureCondition: "len(result) > 0 && result[0] > {{ .Values.analysis.p95Seconds }}"
+      provider:
+        prometheus:
+          address: {{ .Values.prometheus.url }}
+          query: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service=~"{{ $canary }}"}[1m])))

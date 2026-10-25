@@ -314,3 +314,123 @@ Date · Status · Label
 **Consequences.**
 - Every stack has a permanent baseline of known-good requests. This doubles as **black-box monitoring**: synthetic errors mean the stack is broken, whether or not users noticed.
 - At 10 req/s and a 10% canary weight, the canary sees about 1 req/s. That is enough to detect a 30% fault rate within the 1-minute analysis interval, though not subtle regressions. Production traffic does that.
+
+## ADR-011: API deploys by canary (Argo Rollouts + Traefik), gated on edge metrics
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in)
+
+**Context.** The brief asks for a choice between canary, blue/green and rolling for the API, with defined traffic steps, gating metrics and automatic rollback. The app is a black box: its metric names are unknown, and its migrations run at startup.
+
+**Decision.**
+- **Strategy.** An Argo Rollouts canary with Traefik weighted routing. Steps are **10% → 25% → 50% → 100%**, with a 2-minute pause each (1 minute locally).
+- **Gate.** A background AnalysisTemplate evaluates the **canary Service as seen by Traefik**:
+  - success rate ≥ 99%;
+  - p95 ≤ 400 ms;
+  - at least 20 requests per minute, otherwise the result is inconclusive and the rollout pauses.
+- **Automatic rollback.** Two failed measurements abort the rollout: 100% of traffic returns to stable within one reconcile, and the canary scales down.
+
+**Rejected alternatives.**
+- *Blue/green:* needs two full fleets during cutover. At 2,250 req/s that is about 40 extra pods. It also gives no protection against schema changes, because both colours share one database, and the cutover is all-or-nothing.
+- *Plain rolling update:* has no traffic control and no metric gate. A bad version reaches 100% as fast as pods turn Ready, and "Ready" says nothing about error rate.
+- *Gating on the app's own metrics:* the black box's metric names are unknown. Edge metrics are uniform for every app behind the ingress.
+
+**Consequences.**
+- During a bad release, roughly 10–25% of requests see errors for 1–2 minutes before the abort. That is the blast radius, and it is measured in evidence item 2.
+- Argo CD must ignore drift on `TraefikService` weights.
+- Canaries need traffic, hence synthetic traffic (ADR-016).
+
+## ADR-012: Worker deploys by gated rolling update (a Rollouts canary without traffic routing)
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in)
+
+**Context.** A queue consumer has no request traffic to split. It still needs zero dropped jobs during a rollout, and the brief asks for automatic rollback for the worker too.
+
+**Decision.**
+- **Strategy.** An Argo Rollouts canary *without* `trafficRouting`, so "weight" means the share of replicas. In effect this is a rolling update with gates: 25% → 50% → 100% (`maxSurge 25%`, `maxUnavailable 0`).
+- **Gates.** Background analysis checks:
+  - the job failure ratio of canary pods ≤ 2%, isolated by pod-template hash;
+  - the oldest queued job < 120 s;
+  - zero restarts of canary pods.
+- **Draining.** `terminationGracePeriodSeconds: 90`, against a 60 s maximum job.
+
+**Rejected alternatives.**
+- *A plain Deployment rolling update:* rolls the same way, but cannot roll *itself* back on a metric. `progressDeadlineSeconds` only marks the rollout failed.
+- *Blue/green workers:* two consumer fleets would compete for the same queue anyway, so there's no isolation to gain, and it costs double the capacity.
+- *KEDA ScaledJob (one Job per message):* never interrupts work, but at 5.56 jobs/s it means 5.56 pod starts per second.
+
+**Consequences.**
+- The worker analysis relies on stand-in metrics (`jobs_processed_total`, `queue_oldest_job_age_seconds`), so for the real black box it is an assumption. The black-box-safe fallback is queue depth from redis_exporter, plus pod restarts.
+
+## ADR-013: KEDA for both components: API on edge RPS per pod, worker on queue length
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in)
+
+**Context.** The platform must reach 15x (150 → 2,250 req/s) in under 5 minutes and come back down without dropping jobs, and the brief asks for queue depth to drive the workers. The API is I/O-bound: it waits on the database, not the CPU.
+
+**Decision.**
+- **API.** A KEDA `ScaledObject` targeting the Rollout. The Prometheus trigger is `sum(rate(traefik_service_requests_total{stack services}[1m]))` with a threshold of `rpsPerPod`, set to 70% of the *measured* per-pod capacity. A CPU trigger at 70% is a safety net.
+  - Scale-up: no stabilization; each 15 s, add the larger of +100% or +8 pods.
+  - Scale-down: a 300 s stabilization window, then at most −20% per minute.
+- **Worker.** A KEDA Redis-list trigger on `LLEN jobs` with a target of 5 pending jobs per worker. The same scale-down damping applies; scale-in is safe because of draining plus the reaper.
+- **Bounds.** Min 3 API pods (HA); max 40 API and 120 worker pods (capacity maths).
+
+**Rejected alternatives.**
+- *CPU-only HPA:* I/O-bound pods saturate on concurrency long before CPU. By the time CPU rises, latency has already blown the SLO. The signal lags the cause.
+- *HPA with prometheus-adapter:* works, but KEDA covers both cases (Prometheus and Redis) with one component, and adds scale-to-N activation and queue scalers.
+- *Fixed peak capacity:* about 40 pods, around the clock, for traffic that is 15x below peak most of the time.
+
+**Consequences.**
+- Scale-up to 15x takes about 10 s (poll) + 15 s (HPA) per doubling, plus pod start. That's roughly 1.5 minutes in-cluster. On AWS, Karpenter node provisioning adds about 60–90 s, absorbed by over-provisioning pods.
+- `spec.replicas` is left out of the Rollouts so Argo CD and KEDA don't fight over it.
+
+## ADR-018: Expand/contract migrations, a pre-sync backup, and a rollback-after-migration policy
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in) for expand + rollback; DESCRIBED for contract
+
+**Context.** The black box runs migrations at startup, and "some are not backward compatible". In a canary, the first new pod migrates the shared database while the old version is still serving 90% of traffic. Rolling back the image does **not** roll back the schema.
+
+**Decision.**
+- **Policy: every release is backward compatible with the previous one (N-1).** Breaking changes are split across releases:
+  1. **Expand:** add the new column or table, nullable or with defaults; the old code ignores it.
+  2. **Migrate:** the new code writes both shapes, and the data is backfilled.
+  3. **Contract:** drop the old shape, only in a release *after* every running version has stopped using it.
+- **Platform enforcement:**
+  - An Argo CD **PreSync hook takes a `pg_dump`** before every sync (on AWS: an RDS snapshot plus PITR). A sync cannot proceed without a fresh restore point.
+  - Migrations take a session-level advisory lock on a direct connection (ADR-007), so concurrent pods never migrate twice.
+  - The migration runner tolerates newer applied versions, so an *older* image starts fine on an expanded schema.
+- **Rolling back after a migration:**
+  - *After an expand migration:* rolling back the image is safe. The stable version keeps serving on the expanded schema. This is what evidence item 2 demonstrates.
+  - *After a breaking migration shipped by mistake:* **fix forward**, because a forward fix loses no data.
+  - **Restore is the last resort:** restore the pre-sync dump or use PITR. That carries an explicit data-loss window, from the backup time to the restore, and is covered in a runbook.
+
+**Rejected alternatives.**
+- *Down-migrations:* rarely tested and often lossy (a dropped column can't be "un-dropped" with its data). They give false confidence.
+- *A separate migration Job before the rollout (Argo CD PreSync, or Helm hooks):* the right pattern *if* the app can run migrations on their own and skip them at startup. The black box runs them at startup, so this can't be assumed. It is recommended to the app team instead.
+- *Blue/green with a database copy:* doubles database cost, and needs data sync for writes during cutover.
+
+**Consequences.**
+- Database safety becomes partly an **app-team contract** (N-1 compatibility), and code review must check it. The platform makes violations recoverable, but it can't make them impossible.
+- Every deploy costs a `pg_dump`. That is cheap at this size; at scale, use snapshots or PITR instead.
+
+## ADR-023: SLOs on edge SLIs with multi-window, multi-burn-rate alerts
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in)
+
+**Context.** The brief sets targets of 99.9% availability for the shared stack and 99.95% for dedicated tenants, with p95 < 400 ms, alerts and per-tenant visibility.
+
+**Decision.**
+- **SLIs from Traefik, per stack.**
+  - Availability: share of requests that are not 5xx.
+  - Latency: share of requests answered within ≤ 400 ms. This is exact, because Traefik's histogram has a 0.4 s bucket.
+- **Recording rules** over 5m, 30m, 1h, 6h and 3d windows, labelled with `namespace`, `stack` and `tier`.
+- **Error budgets:** 99.9% gives 43.2 min per 30 days; 99.95% gives 21.6 min.
+- **Alerts** (Google SRE workbook): page at a **14.4×** burn over 1h AND 5m (2% of the monthly budget gone in an hour) or **6×** over 6h AND 30m; open a ticket at **1×** over 3 days. Both SLIs are covered, and every alert links its runbook.
+
+**Rejected alternatives.**
+- *Static thresholds ("5xx > 1% for 5 min"):* these page on short blips that don't threaten the SLO and miss slow burns that do. They are not tied to the budget.
+- *Single-window burn-rate alerts:* the long window alone is slow to reset after recovery; the short window alone is noisy. The AND of both windows gives fast detection *and* fast reset.
+- *SLIs from app metrics:* unknown in the black box, and not uniform across tenants.
+
+**Consequences.**
+- Locally, Prometheus keeps only 12 h, so the 3d windows compute over whatever data exists. The design is correct, but the local data is truncated (labelled).
+- Synthetic traffic is included in the local SLIs, since it is almost all the traffic there is. Production would split it out using Traefik's `synthetic` header label.

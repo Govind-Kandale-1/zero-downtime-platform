@@ -1,0 +1,15 @@
+# Voluntary disruptions (node drain, upgrades) take at most one pod at a time.
+{{- range $c := list "api" "worker" }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $c }}
+  labels:
+    {{- include "app.labels" $ | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "app.selector" (dict "component" $c "root" $) | nindent 6 }}
+{{- end }}

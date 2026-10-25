@@ -1,0 +1,82 @@
+# Defaults for one stack. Per-stack values come from gitops/stacks/<name>.yaml
+# (env stacks) or the tenants ApplicationSet (dedicated tenants); the image
+# digest comes from gitops/releases/<stage>.yaml.
+
+stack:
+  name: ""
+  namespace: ""
+  tier: nonprod        # nonprod | shared | dedicated
+  release: dev
+  residency: eu
+  region: eu-central-1
+  size: small          # tiny | small | medium
+  slo: "99.9"          # "99.9" (shared) | "99.95" (dedicated)
+
+image:
+  repository: ghcr.io/govind-kandale-1/zero-downtime-platform
+  digest: ""           # required: sha256:<64 hex>; never a tag
+
+# Requests sized for the Go stand-in. CPU tracks total req/s, not pod count,
+# so many small pods fit the laptop budget.
+sizes:
+  tiny:
+    api: { cpu: 25m, memory: 24Mi, memoryLimit: 64Mi }
+    worker: { cpu: 10m, memory: 16Mi, memoryLimit: 48Mi }
+  small:
+    api: { cpu: 50m, memory: 32Mi, memoryLimit: 96Mi }
+    worker: { cpu: 20m, memory: 24Mi, memoryLimit: 64Mi }
+  medium:
+    api: { cpu: 100m, memory: 64Mi, memoryLimit: 192Mi }
+    worker: { cpu: 50m, memory: 32Mi, memoryLimit: 96Mi }
+
+api:
+  minReplicas: 3              # one per zone for availability
+  maxReplicas: 40
+  rpsPerPod: 70               # placeholder until calibrated: 70% of measured per-pod capacity
+  cpuUtilization: 70          # safety-net trigger
+  canarySteps: [10, 25, 50]
+  pauseSeconds: 120
+  terminationGracePeriodSeconds: 30
+  preStopSleepSeconds: 5
+  maxInflight: 8              # stand-in capacity model
+  workLatencyMs: 40
+
+worker:
+  minReplicas: 2
+  maxReplicas: 120            # Little's law at 5.56 jobs/s x 10 s mean, plus headroom
+  listLength: 5               # target pending jobs per worker
+  canarySteps: [25, 50]
+  pauseSeconds: 180
+  terminationGracePeriodSeconds: 90   # > 60 s longest job
+
+analysis:
+  interval: 1m
+  initialDelay: 1m
+  failureLimit: 1
+  successRate: 0.99
+  p95Seconds: 0.4
+  minRequests: 20
+  workerFailureRatio: 0.02
+  workerMaxQueueAgeSeconds: 120
+
+backup:
+  mode: pgdump                # pgdump (local CNPG) | managed (RDS automated backups + PITR)
+  schedule: "0 * * * *"
+  retain: 24
+  storage: 1Gi
+  image: postgres:18.6-alpine
+
+ingress:
+  hosts: []                   # default: <stack.name>.localtest.me
+
+queue:
+  address: ""                 # default: valkey.<namespace>.svc:6379
+
+prometheus:
+  url: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+
+secretStore: platform-secrets
+
+# Local target only: scrape the redis_exporter sidecar that the provider layer
+# runs next to Valkey (queue length). On AWS queue metrics come from CloudWatch.
+valkeyMetrics: true

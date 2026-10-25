@@ -1,0 +1,164 @@
+groups:
+  - name: zdp-sli-acme
+    interval: 30s
+    rules:
+      - record: zdp:sli_availability:ratio_rate5m
+        expr: |
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*",code!~"5.."}[5m]))
+          /
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*"}[5m]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_latency_good:ratio_rate5m
+        expr: |
+          sum(rate(traefik_service_request_duration_seconds_bucket{service=~"tenant-acme-api-(stable|canary)-.*",le="0.4"}[5m]))
+          /
+          sum(rate(traefik_service_request_duration_seconds_count{service=~"tenant-acme-api-(stable|canary)-.*"}[5m]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_availability:ratio_rate30m
+        expr: |
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*",code!~"5.."}[30m]))
+          /
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*"}[30m]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_latency_good:ratio_rate30m
+        expr: |
+          sum(rate(traefik_service_request_duration_seconds_bucket{service=~"tenant-acme-api-(stable|canary)-.*",le="0.4"}[30m]))
+          /
+          sum(rate(traefik_service_request_duration_seconds_count{service=~"tenant-acme-api-(stable|canary)-.*"}[30m]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_availability:ratio_rate1h
+        expr: |
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*",code!~"5.."}[1h]))
+          /
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*"}[1h]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_latency_good:ratio_rate1h
+        expr: |
+          sum(rate(traefik_service_request_duration_seconds_bucket{service=~"tenant-acme-api-(stable|canary)-.*",le="0.4"}[1h]))
+          /
+          sum(rate(traefik_service_request_duration_seconds_count{service=~"tenant-acme-api-(stable|canary)-.*"}[1h]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_availability:ratio_rate6h
+        expr: |
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*",code!~"5.."}[6h]))
+          /
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*"}[6h]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_latency_good:ratio_rate6h
+        expr: |
+          sum(rate(traefik_service_request_duration_seconds_bucket{service=~"tenant-acme-api-(stable|canary)-.*",le="0.4"}[6h]))
+          /
+          sum(rate(traefik_service_request_duration_seconds_count{service=~"tenant-acme-api-(stable|canary)-.*"}[6h]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_availability:ratio_rate3d
+        expr: |
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*",code!~"5.."}[3d]))
+          /
+          sum(rate(traefik_service_requests_total{service=~"tenant-acme-api-(stable|canary)-.*"}[3d]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+      - record: zdp:sli_latency_good:ratio_rate3d
+        expr: |
+          sum(rate(traefik_service_request_duration_seconds_bucket{service=~"tenant-acme-api-(stable|canary)-.*",le="0.4"}[3d]))
+          /
+          sum(rate(traefik_service_request_duration_seconds_count{service=~"tenant-acme-api-(stable|canary)-.*"}[3d]))
+        labels:
+          namespace: tenant-acme
+          stack: acme
+          tier: dedicated
+  - name: zdp-slo-alerts-acme
+    rules:
+      - alert: ZdpErrorBudgetBurnPage
+        expr: |
+          (
+            (1 - zdp:sli_availability:ratio_rate1h{namespace="tenant-acme"}) > (14.4 * 0.0005)
+            and
+            (1 - zdp:sli_availability:ratio_rate5m{namespace="tenant-acme"}) > (14.4 * 0.0005)
+          )
+          or
+          (
+            (1 - zdp:sli_availability:ratio_rate6h{namespace="tenant-acme"}) > (6 * 0.0005)
+            and
+            (1 - zdp:sli_availability:ratio_rate30m{namespace="tenant-acme"}) > (6 * 0.0005)
+          )
+        labels:
+          severity: page
+          sli: availability
+          stack: acme
+          tier: dedicated
+          objective: "0.9995"
+        annotations:
+          summary: "acme: availability error budget burning fast"
+          runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+      - alert: ZdpErrorBudgetBurnTicket
+        expr: |
+          (1 - zdp:sli_availability:ratio_rate3d{namespace="tenant-acme"}) > 0.0005
+        labels:
+          severity: ticket
+          sli: availability
+          stack: acme
+          tier: dedicated
+          objective: "0.9995"
+        annotations:
+          summary: "acme: availability error budget exhausted over 3 days"
+          runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+      - alert: ZdpErrorBudgetBurnPage
+        expr: |
+          (
+            (1 - zdp:sli_latency_good:ratio_rate1h{namespace="tenant-acme"}) > (14.4 * 0.0005)
+            and
+            (1 - zdp:sli_latency_good:ratio_rate5m{namespace="tenant-acme"}) > (14.4 * 0.0005)
+          )
+          or
+          (
+            (1 - zdp:sli_latency_good:ratio_rate6h{namespace="tenant-acme"}) > (6 * 0.0005)
+            and
+            (1 - zdp:sli_latency_good:ratio_rate30m{namespace="tenant-acme"}) > (6 * 0.0005)
+          )
+        labels:
+          severity: page
+          sli: latency_good
+          stack: acme
+          tier: dedicated
+          objective: "0.9995"
+        annotations:
+          summary: "acme: latency_good error budget burning fast"
+          runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+      - alert: ZdpErrorBudgetBurnTicket
+        expr: |
+          (1 - zdp:sli_latency_good:ratio_rate3d{namespace="tenant-acme"}) > 0.0005
+        labels:
+          severity: ticket
+          sli: latency_good
+          stack: acme
+          tier: dedicated
+          objective: "0.9995"
+        annotations:
+          summary: "acme: latency_good error budget exhausted over 3 days"
+          runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md

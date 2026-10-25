@@ -1,0 +1,2 @@
+stack: { name: prod, namespace: app-prod, tier: shared, release: prod-ring0, residency: eu, region: eu-central-1, size: small, slo: "99.9" }
+image: { repository: ghcr.io/govind-kandale-1/zero-downtime-platform, digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }

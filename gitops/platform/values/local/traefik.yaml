@@ -31,9 +31,15 @@ metrics:
     addServicesLabels: true  # per-Service = stable vs canary for analysis
     service:
       enabled: true
+    # Traefik's own `service` label must win over the scrape target's
+    # `service` label (otherwise it is renamed exported_service).
     serviceMonitor:
       enabled: true
       interval: 15s
+      honorLabels: true
+    # Lets dashboards split synthetic traffic (ADR-016) from user traffic.
+    headerLabels:
+      synthetic: X-Synthetic
 
 deployment:
   replicas: 1

@@ -1,0 +1,72 @@
+{{- $size := fromYaml (include "app.size" .) }}
+# Worker: a gated rolling update - a Rollouts canary without traffic routing,
+# so "weight" is the share of replicas - with automatic abort on analysis
+# failure (ADR-012). A plain Deployment would roll the same way but could not
+# roll itself back. spec.replicas is absent: KEDA owns it.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: worker
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "app.selector" (dict "component" "worker" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.selector" (dict "component" "worker" "root" .) | nindent 8 }}
+        {{- include "app.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: app
+      automountServiceAccountToken: false
+      priorityClassName: app
+      # Longest job is 60 s: SIGTERM -> stop claiming -> finish the job in hand.
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- include "app.podSecurity" . | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "app.selector" (dict "component" "worker" "root" .) | nindent 14 }}
+      containers:
+        - name: worker
+          image: {{ include "app.image" . }}
+          command: ["/worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - secretRef:
+                name: app-env
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: { cpu: {{ $size.worker.cpu }}, memory: {{ $size.worker.memory }} }
+            limits: { memory: {{ $size.worker.memoryLimit }} }
+          securityContext:
+            {{- include "app.containerSecurity" . | nindent 12 }}
+  strategy:
+    canary:
+      maxSurge: "25%"
+      maxUnavailable: 0
+      analysis:
+        templates:
+          - templateName: worker-canary
+        args:
+          - name: canary-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+        startingStep: 1
+      steps:
+        {{- range .Values.worker.canarySteps }}
+        - setWeight: {{ . }}
+        - pause: { duration: {{ printf "%ds" (int $.Values.worker.pauseSeconds) }} }
+        {{- end }}

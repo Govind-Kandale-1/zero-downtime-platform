@@ -1,0 +1,18 @@
+# The weighted split Argo Rollouts drives during a canary. Argo CD must ignore
+# changes to the weights (ignoreDifferences in the stack ApplicationSet), or
+# self-heal would fight the Rollouts controller mid-canary.
+apiVersion: traefik.io/v1alpha1
+kind: TraefikService
+metadata:
+  name: api
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  weighted:
+    services:
+      - name: api-stable
+        port: 80
+        weight: 100
+      - name: api-canary
+        port: 80
+        weight: 0

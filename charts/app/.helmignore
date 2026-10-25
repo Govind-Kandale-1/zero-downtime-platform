@@ -1,0 +1,5 @@
+# Docs and tests are not part of the packaged chart (a .md file in
+# templates/ would otherwise be rendered as a manifest and break the chart).
+code-review.md
+templates/code-review.md
+tests/

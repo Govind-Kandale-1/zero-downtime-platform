@@ -1,0 +1,18 @@
+# Argo Rollouts points each Service at a ReplicaSet by injecting
+# rollouts-pod-template-hash into its selector; Traefik weights between them.
+{{- range $svc := list "api-stable" "api-canary" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc }}
+  labels:
+    {{- include "app.labels" $ | nindent 4 }}
+spec:
+  selector:
+    {{- include "app.selector" (dict "component" "api" "root" $) | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}
