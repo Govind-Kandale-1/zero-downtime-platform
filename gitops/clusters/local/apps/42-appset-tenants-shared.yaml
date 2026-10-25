@@ -19,9 +19,10 @@ spec:
         revision: main
         files:
           - path: tenants/*.yaml
-        selector:
-          matchLabels:
-            tier: shared
+      # Post-selector: a field of the generator, not of `git`.
+      selector:
+        matchLabels:
+          tier: shared
   template:
     metadata:
       name: "tenant-{{.name}}"

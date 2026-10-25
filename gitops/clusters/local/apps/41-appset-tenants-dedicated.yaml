@@ -21,9 +21,11 @@ spec:
               revision: main
               files:
                 - path: tenants/*.yaml
-              selector:
-                matchLabels:
-                  tier: dedicated
+            # Post-selector: a field of the generator, not of `git` (nested
+            # under `git` it is silently dropped and every tenant matches).
+            selector:
+              matchLabels:
+                tier: dedicated
           - git:
               repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
               revision: main
