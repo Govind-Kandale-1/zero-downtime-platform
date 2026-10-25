@@ -88,6 +88,19 @@ The same logic is why the Kubernetes backend was rejected: state would live insi
 
 ## 3. Multi-stage pipeline
 
+### Q: What does CI check on a pull request?
+**A:** Six required jobs:
+- **go-test:** unit tests, plus integration tests against real Postgres and Valkey containers.
+- **chart-test:** 24 render assertions on the one chart, schema validation including CRDs, and promtool parsing the SLO PromQL.
+- **policy-test:** every tenant file against the onboarding policy, which includes EU residency.
+- **terraform-validate:** every root, local *and* AWS, plus tflint.
+- **iac-scan:** Trivy misconfiguration checks on Terraform, charts and the Dockerfile.
+- **shell-lint:** shellcheck, an LF line-ending check, and the promotion-script race test.
+
+All actions are pinned by commit SHA. I showed a PR adding an EU tenant in us-east-1 being blocked by policy-test.
+**Follow-ups:** "Did CI ever catch something the laptop didn't?" Yes. promtool passed on Windows but failed on Linux because of a 0700 temp directory and a non-root container, so running on two platforms paid off.
+**Point to:** `.github/code-review.md`, `evidence/00-ci/README.md`.
+
 ### Q: How can the pipeline commit to a protected `main`?
 **A:** The ruleset has two bypass actors: repo admins, and a write-enabled deploy key held only by the release workflow. `GITHUB_TOKEN` can't bypass rulesets, and requiring a human PR per promotion would defeat automated ring rollout.
 **Follow-ups:** "Isn't a write deploy key risky?" It's scoped to one repo, stored as an Actions secret, used only in promote jobs, and every commit it makes is a one-line release-file change visible in history.
