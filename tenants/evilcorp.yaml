@@ -1,8 +1,0 @@
-# Deliberately invalid: EU residency in a US region. CI must block this PR.
-name: evilcorp
-tier: dedicated
-residency: eu
-region: us-east-1
-ring: 1
-size: small
-slo: "99.95"

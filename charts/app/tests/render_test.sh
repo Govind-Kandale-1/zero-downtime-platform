@@ -85,10 +85,13 @@ rm -rf "$pkg"
 # promtool (same version as the cluster's Prometheus) actually parses it.
 tmp=$(mktemp -d)
 q "$tenant" 'select(.kind=="PrometheusRule") | .spec' > "$tmp/rules.yaml"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(host_path "$tmp"):/r" --entrypoint promtool \
-    "$PROMETHEUS_IMAGE" check rules /r/rules.yaml >/dev/null 2>&1; then
+# mktemp dirs are 0700; the distroless Prometheus image runs as nobody.
+chmod -R a+rX "$tmp"
+if out=$(MSYS_NO_PATHCONV=1 docker run --rm -v "$(host_path "$tmp"):/r" --entrypoint promtool \
+    "$PROMETHEUS_IMAGE" check rules /r/rules.yaml 2>&1); then
   check "promtool parses SLO recording + alert rules" ok ok
 else
+  printf '%s\n' "$out" | tail -5
   check "promtool parses SLO recording + alert rules" invalid ok
 fi
 rm -rf "$tmp"
