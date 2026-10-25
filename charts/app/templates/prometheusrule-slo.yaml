@@ -44,6 +44,11 @@ spec:
       rules:
         {{- range $sli := list "availability" "latency_good" }}
         {{- $r := printf "zdp:sli_%s:ratio_rate" $sli }}
+        {{- /* Availability uses the stack's SLO (99.9 / 99.95). Latency uses
+        slo.latencyObjective: the brief's p95 < 400 ms means >= 95% of requests
+        within 400 ms; reusing 99.9% would page on tails the brief allows. */}}
+        {{- $obj := ternary $obj ($.Values.slo.latencyObjective | toString) (eq $sli "availability") }}
+        {{- $budget := subf 1.0 (float64 $obj) }}
         - alert: ZdpErrorBudgetBurnPage
           expr: |
             (
@@ -78,4 +83,33 @@ spec:
           annotations:
             summary: {{ printf "%s: %s error budget exhausted over 3 days" $.Values.stack.name $sli | quote }}
             runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/burn-rate-page.md
+        {{- end }}
+    - name: {{ printf "zdp-cause-alerts-%s" .Values.stack.name }}
+      rules:
+        # Jobs waiting far longer than any job runs (max 60 s): workers are not
+        # keeping up (at max replicas, crash-looping, or blocked on a dependency).
+        - alert: ZdpQueueBacklog
+          expr: max(queue_oldest_job_age_seconds{namespace="{{ $ns }}"}) > {{ .Values.alerts.queueAgeSeconds }}
+          for: 5m
+          labels:
+            severity: page
+            stack: {{ .Values.stack.name }}
+            tier: {{ .Values.stack.tier }}
+          annotations:
+            summary: {{ printf "%s: oldest queued job older than %v s" .Values.stack.name .Values.alerts.queueAgeSeconds | quote }}
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/queue-backlog.md
+        {{- if .Values.dbMetrics }}
+        # Clients waiting for a PgBouncer server connection: the pool (or the
+        # database behind it) is saturated. A cause, so a ticket; if users feel
+        # it, the latency burn-rate alert pages.
+        - alert: ZdpDbPoolWaiting
+          expr: max(max_over_time(cnpg_pgbouncer_pools_maxwait{namespace="{{ $ns }}",database="app"}[5m])) >= 1
+          for: 5m
+          labels:
+            severity: ticket
+            stack: {{ .Values.stack.name }}
+            tier: {{ .Values.stack.tier }}
+          annotations:
+            summary: {{ printf "%s: requests waiting >= 1 s for a database connection" .Values.stack.name | quote }}
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/db-connection-saturation.md
         {{- end }}

@@ -6,6 +6,7 @@
 |---|---|
 | `Chart.yaml` | `app` 0.1.0. CI overrides the version to `0.1.<run_number>` and publishes it to `oci://ghcr.io/govind-kandale-1/charts`, so the chart is promoted together with the image (ADR-014). `kubeVersion >= 1.30` because of the native `preStop.sleep` hook. |
 | `values.yaml` | Defaults for one stack (see the table below) |
+| `.helmignore` | Keeps `code-review.md` files and `tests/` out of the packaged chart. A review inside `templates/` would otherwise be rendered as a template and break the chart; a render check proves the package is clean |
 | `values.schema.json` | Rejects a render without `image.digest` matching `sha256:<64 hex>` (no tags, ever); validates the name pattern, size, tier and SLO enums |
 | `templates/` | 13 templates plus 2 partials (see `templates/code-review.md`) |
 | `tests/` | Render assertions, kubeconform and promtool (see `tests/code-review.md`) |
@@ -23,6 +24,8 @@
 | `worker.maxReplicas` | 120 | Little's law at 5.56 jobs/s × 10 s ≈ 56, with headroom (ADR-024) |
 | `analysis.*` | success ≥ 99%, p95 ≤ 0.4 s, ≥ 20 requests/min | Matches the brief's p95 target; below the minimum count the result is *inconclusive*, never a pass |
 | `backup.mode` | `pgdump` | Local CNPG. `managed` means RDS automated backups + PITR on AWS |
+| `slo.latencyObjective` | 0.95 | The latency SLO: ≥ 95% of requests within 400 ms (the brief's p95). Availability uses `stack.slo` |
+| `alerts.queueAgeSeconds` | 300 | `ZdpQueueBacklog` threshold: 5× the longest job; the gate's limit is 120 s |
 | `backup.timeoutSeconds` | 900 | A hung backup job fails instead of blocking later runs |
 | `dbMetrics` | true | Scrape the CloudNativePG Postgres + PgBouncer exporters (local only; `false` on AWS) |
 
@@ -31,7 +34,7 @@
 - The stack Application must ignore drift on `TraefikService` weights (`ignoreDifferences`). Otherwise Argo CD self-heal would reset the weights Argo Rollouts sets mid-canary.
 
 **Verify:**
-- `bash charts/app/tests/render_test.sh`: 33 checks.
+- `bash charts/app/tests/render_test.sh`: 35 checks.
 - `helm lint charts/app -f charts/app/tests/values-prod.yaml --kube-version 1.34.0`.
 
 **Label:** RUN-LOCAL (stand-in).

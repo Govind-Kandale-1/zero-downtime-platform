@@ -93,6 +93,14 @@ secretStore: platform-secrets
 # runs next to Valkey (queue length). On AWS queue metrics come from CloudWatch.
 valkeyMetrics: true
 
+# Latency SLO: the brief's p95 < 400 ms, i.e. >= 95% of requests within 400 ms.
+# Availability uses stack.slo (99.9 shared / 99.95 dedicated).
+slo:
+  latencyObjective: 0.95
+
+alerts:
+  queueAgeSeconds: 300        # 5x the longest job (60 s); the gate's limit is 120 s
+
 # Local target only: scrape the CloudNativePG Postgres and PgBouncer exporters
 # (connection pool waits, backends). On AWS, RDS metrics come from CloudWatch.
 dbMetrics: true

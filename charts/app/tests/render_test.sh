@@ -87,8 +87,14 @@ check "Rollouts leave replicas to KEDA" \
   "$(q "$prod" 'select(.kind=="Rollout") | .spec.replicas' | sort -u)" "null"
 
 tenant=$(render values-tenant.yaml tenant-acme)
-check "99.95 SLO renders objective 0.9995" \
-  "$(q "$tenant" 'select(.kind=="PrometheusRule") | .spec.groups[].rules[] | select(.alert=="ZdpErrorBudgetBurnPage") | .labels.objective' | sort -u)" "0.9995"
+check "99.95 SLO renders availability objective 0.9995" \
+  "$(q "$tenant" 'select(.kind=="PrometheusRule") | .spec.groups[].rules[] | select(.alert=="ZdpErrorBudgetBurnPage" and .labels.sli=="availability") | .labels.objective')" "0.9995"
+# The brief's latency target is p95 < 400 ms, i.e. at least 95% of requests
+# within 400 ms. Reusing the availability objective would demand 99.9%.
+check "latency SLO objective is 0.95 (the brief's p95 < 400 ms)" \
+  "$(q "$prod" 'select(.kind=="PrometheusRule") | .spec.groups[].rules[] | select(.alert=="ZdpErrorBudgetBurnPage" and .labels.sli=="latency_good") | .labels.objective')" "0.95"
+check "alerts exist for queue backlog and database pool waits" \
+  "$(q "$prod" 'select(.kind=="PrometheusRule") | .spec.groups[].rules[] | select(.alert=="ZdpQueueBacklog" or .alert=="ZdpDbPoolWaiting") | .alert' | sort | tr '\n' ' ')" "ZdpDbPoolWaiting ZdpQueueBacklog "
 check "tenant host defaults to <name>.localtest.me" \
   "$(q "$tenant" 'select(.kind=="IngressRoute") | .spec.routes[0].match')" 'Host(`acme.localtest.me`)'
 
