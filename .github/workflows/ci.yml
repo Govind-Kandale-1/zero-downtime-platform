@@ -135,3 +135,4 @@ jobs:
         run: |
           git config --global user.name ci && git config --global user.email ci@example.com
           bash scripts/tests/bump_release_test.sh
+          bash scripts/tests/gate_test.sh

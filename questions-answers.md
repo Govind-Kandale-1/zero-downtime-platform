@@ -101,6 +101,30 @@ All actions are pinned by commit SHA. I showed a PR adding an EU tenant in us-ea
 **Follow-ups:** "Did CI ever catch something the laptop didn't?" Yes. promtool passed on Windows but failed on Linux because of a 0700 temp directory and a non-root container, so running on two platforms paid off.
 **Point to:** `.github/code-review.md`, `evidence/00-ci/README.md`.
 
+### Q: "Build once." Prove production runs the exact artifact you tested in dev.
+**A:**
+1. The image is built once and from then on referenced only by its sha256 digest. The chart's schema refuses tags.
+2. Every release file pins that digest, together with a chart version.
+3. The gate checks that each Rollout's pod template ends in `@<that digest>` before passing.
+4. It's signed keylessly. `cosign verify --certificate-identity-regexp '<repo>/.github/workflows/release.yml@refs/heads/main'` proves *this workflow on main* built it, and the SBOM is attached as a signed attestation.
+
+Promotion copies the digest file to file. There's no rebuild and no retag.
+**Follow-ups:** "Why promote the chart too?" Otherwise a change to probes or analysis rules would hit every stack at once and skip the gates.
+**Point to:** ADR-014, `.github/workflows/release.yml`.
+
+### Q: Why a self-hosted runner? Isn't that dangerous on a public repo?
+**A:** The gates need the laptop cluster's Prometheus and Argo CD, and GitHub-hosted runners can't reach them without exposing them publicly. A runner that only dials out is safer. Three mitigations:
+- Fork PR workflows require approval.
+- Only the release workflow, on push to main or manual dispatch, targets that runner label.
+- The runner's Kubernetes identity is read-only. The bring-up script proves it can't delete anything.
+
+In the cloud this becomes Actions Runner Controller inside each cluster.
+**Point to:** ADR-015, `scripts/runner/code-review.md`.
+
+### Q: What happens when GitHub is down?
+**A:** Nothing new deploys: no builds, no promotions, and no Git for Argo CD to pull. Running stacks are unaffected. Argo CD keeps the last-synced state, and KEDA and Rollouts are in-cluster. Images are already on the nodes; a node replacement would need GHCR, which is why a regional pull-through cache (ECR) is on the roadmap.
+**Point to:** ADR-010, ADR-015.
+
 ### Q: How can the pipeline commit to a protected `main`?
 **A:** The ruleset has two bypass actors: repo admins, and a write-enabled deploy key held only by the release workflow. `GITHUB_TOKEN` can't bypass rulesets, and requiring a human PR per promotion would defeat automated ring rollout.
 **Follow-ups:** "Isn't a write deploy key risky?" It's scoped to one repo, stored as an Actions secret, used only in promote jobs, and every commit it makes is a one-line release-file change visible in history.

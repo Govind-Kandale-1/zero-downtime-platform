@@ -1,0 +1,61 @@
+# One promotion step, reused for every stage (ADR-015):
+#   promote  (GitHub-hosted)  commit the chart version + digest to
+#                             gitops/releases/<stage>.yaml with the deploy key.
+#                             Runs in a GitHub Environment, so "production"
+#                             waits for a required reviewer.
+#   gate     (self-hosted, on the laptop)  read-only checks that Argo CD pulled
+#                             it, the canary finished, and SLIs hold. A failed
+#                             gate fails the workflow: later stages never run.
+name: promote (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      stage: { type: string, required: true }        # dev | staging | prod-ring0 | ring1 | ring2
+      stacks: { type: string, required: true }       # space-separated stacks on this stage
+      environment: { type: string, required: true }  # GitHub Environment (approval for production)
+      chart_version: { type: string, required: true }
+      digest: { type: string, required: true }
+    secrets:
+      GITOPS_DEPLOY_KEY: { required: true }
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
+      - name: commit the release pin (this commit is the deployment)
+        env:
+          STAGE: ${{ inputs.stage }}
+          VERSION: ${{ inputs.chart_version }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          git config user.name "zdp-release-bot"
+          git config user.email "zdp-release-bot@users.noreply.github.com"
+          bash scripts/bump-release.sh "$STAGE" "$VERSION" "$DIGEST"
+
+  gate:
+    needs: promote
+    runs-on: [self-hosted, local-kind]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - name: gate (read-only; fails on unhealthy, wrong digest, SLI breach or no data)
+        env:
+          STAGE: ${{ inputs.stage }}
+          STACKS: ${{ inputs.stacks }}
+          EXPECT_VERSION: ${{ inputs.chart_version }}
+          EXPECT_DIGEST: ${{ inputs.digest }}
+        run: |
+          # shellcheck disable=SC2086 # STACKS is a space-separated list
+          bash scripts/gate.sh "$STAGE" $STACKS

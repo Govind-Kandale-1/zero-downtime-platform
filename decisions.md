@@ -460,3 +460,54 @@ Date · Status · Label
 **Consequences.**
 - Dedicated tenants share the Kubernetes control plane and ingress with others in the region, so a cluster-level incident affects them all. The 99.95% target relies on Multi-AZ data services, PDBs, topology spread and ring-ordered rollouts.
 - Cost per dedicated tenant is mostly its database and cache (see `docs/cost.md`).
+
+## ADR-014: Supply chain: GHCR, Trivy, keyless Cosign with SBOM attestation, and the chart promoted as an OCI artifact
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (GitHub Actions)
+
+**Context.** The brief requires "build once, scan, sign, promote the same artifact by digest". The design review also found that a chart change (probes, PDBs, analysis) would otherwise bypass every gate, because all stacks read the chart from the same branch.
+
+**Decision.**
+- **Build and publish.** One image per commit is built once and pushed to **GHCR**. From that point it is referenced only as `repository@sha256:…`; the chart's values schema rejects anything else.
+- **Scan.** **Trivy** scans that digest and fails the run on fixable HIGH/CRITICAL findings. It also generates a **CycloneDX SBOM**.
+- **Sign.** **Cosign keyless**: GitHub's OIDC token gets a short-lived Fulcio certificate bound to `…/release.yml@refs/heads/main`, the signature goes to Rekor, and the SBOM is attached as a signed attestation.
+- **Chart.** The chart is packaged as `0.1.<run>`, pushed to `oci://ghcr.io/…/charts` and signed too. **Release files pin both** the chart version and the image digest, so chart changes are promoted and gated exactly like code.
+
+**Rejected alternatives.**
+- *Key-based Cosign:* someone has to guard the private key (KMS, rotation). Keyless ties a signature to *which workflow on which branch* produced it, which is the property we want to verify.
+- *Notation/Notary v2:* a smaller ecosystem, and it needs a key and a trust store.
+- *ECR:* AWS-specific, so not portable. GHCR is reachable from every target. An ECR pull-through cache is on the roadmap for in-region pulls.
+- *Retagging promoted images (`:staging`, `:prod`):* tags move, so the "same artifact" guarantee is lost. Digests are immutable.
+- *Charts read straight from Git:* any chart edit would reach every stack within one sync, bypassing the gates.
+
+**Consequences.**
+- The repo identity is recorded in the public Rekor log, which is fine for a public repo.
+- Enforcing signatures at admission (Kyverno `verifyImages` with the same identity regex as `config/platform.env`) is P1. Until then the signature is verifiable (`cosign verify`) but not enforced.
+
+## ADR-015: Promotion by digest via release-file commits, gated by read-only checks on a self-hosted runner
+
+2026-10-25 · Accepted · Label: RUN-LOCAL
+
+**Context.** The brief requires promotion through dev → staging → production with gates based on real metrics, a rollout order of shared first, then dedicated rings, then regions, and a halt on failure. The pull model (ADR-010) means CI never deploys. And the metrics live in a cluster on a laptop that GitHub-hosted runners can't reach.
+
+**Decision.**
+- **A promotion is a commit.** `bump-release.sh` writes `gitops/releases/<stage>.yaml` (chart version + digest) using a write deploy key that bypasses the ruleset. Argo CD pulls it, and Argo Rollouts runs the canary with its own in-cluster analysis.
+- **A gate is a read-only check.** `gate.sh` runs on a **self-hosted runner on the laptop** with a `view`-level ServiceAccount. It confirms:
+  - the stack is synced at that chart version;
+  - both Rollouts completed on that exact digest;
+  - the stack's own edge SLIs over a soak window, a 5xx ratio under 0.5% and p95 under 400 ms;
+  - the oldest job in the queue is under 120 s.
+
+  No data is a failure.
+- **Order:** dev → staging → **production approval** (GitHub Environment) → prod ring 0 (shared stack, and so its shared tenants) → ring 1 (acme) → ring 2 (globex). Rings are ordered by region on AWS. Any failed gate fails the workflow, and later rings never receive the release.
+
+**Rejected alternatives.**
+- *Kargo:* the purpose-built GitOps promotion tool (Freight, Stages, verification). It's the most "correct" option, but it adds a fourth control plane to operate and learn inside the time box. It's on the roadmap.
+- *Argo CD Image Updater:* writes tags back to Git, and gating between environments is weak.
+- *Gates in GitHub-hosted CI:* they can't reach the laptop's Prometheus without exposing it publicly, which is worse than a runner that only dials *out*.
+- *Pipeline push to the cluster:* rejected in ADR-010.
+
+**Consequences.**
+- A self-hosted runner on a public repository is a known risk. It is mitigated by: approval required for fork workflows; the runner label used only by `release.yml` on `push`/`workflow_dispatch`; read-only cluster credentials, verified by `runner-up.sh`.
+- In the cloud, the same role is played by Actions Runner Controller in each cluster.
+- Promotion depends on GitHub (Actions, GHCR, the repo). If GitHub is down, nothing new is released, but running stacks keep serving.

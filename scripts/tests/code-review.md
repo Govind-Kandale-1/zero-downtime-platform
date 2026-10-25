@@ -10,7 +10,9 @@
 
 | `bump_release_test.sh` | Uses throwaway bare and clone repos, so it never touches GitHub. It checks: a promotion succeeds even after someone else pushed to main (rebase and retry); the other commit is preserved; the release file pins both the version and the digest; re-promoting the same artifact is a no-op; malformed digests and unknown stages are rejected. |
 
-More tests (`gate_test.sh`, `docs_test.sh`) are added by later build steps.
+| `gate_test.sh` | Puts a **stub `kubectl`** on `PATH` that replays canned Argo CD, Rollout and Prometheus answers for five scenarios, against a throwaway repo with a release file. **healthy** → `GATE PASS`. **never-healthy** (with `GATE_TIMEOUT=5`) → fails within the timeout ("Application not Synced/Healthy"). **wrong-digest** → "digest mismatch". **sli-breach** (8% errors) → "error ratio". **no-traffic** (empty vectors) → "no traffic". No cluster is needed, so it runs in CI. |
+
+More tests (`docs_test.sh`) are added by later build steps.
 
 **Windows note:** Git Bash rewrites arguments that look like absolute paths (`/worker` → `C:/Program Files/Git/worker`). The smoke test wraps `docker` with `MSYS_NO_PATHCONV=1`, scoped to docker only, because native `git.exe` still needs the conversion.
 
