@@ -9,3 +9,14 @@ ScaledObject Fallback=False NoFallbackFound
 ScaledObject Paused=False 
 ScaledObject HPAActive=True HPAActive
 keda-hpa-dummy   Deployment/dummy   0/5 (avg)   1     2     1     56s
+
+# Scale test on the real dev stack after release 0.1.9 (TriggerAuthentication worker-queue, no hard-coded address):
+# 60 jobs x 20 s enqueued at 19:54:28; HPA metric = LLEN per worker (target 5); dev worker max = 5
+19:54:28 | LLEN 56 | 35/5 | worker 5/5
+19:55:10 | LLEN 50 | 10/5 | worker 5/5
+19:56:16 | LLEN 41 | 8200m/5 | worker 5/5
+
+# Side effect, kept as found: that 60-job burst was still draining when release 40227986168's dev gate measured,
+# so the gate's queue-age check failed and halted the fleet (staging, prod and the rings were skipped):
+GATE FAIL dev/dev: queue age: oldest job waited 121.795312475s >= 120s
+# The queue drained at 19:58:34 UTC and the failed gate was re-run (gh run rerun 40227986168 --failed).
