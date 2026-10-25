@@ -40,6 +40,11 @@ api:
   # The old 50m at 70% fired at ~25 req/s and sized the fleet on CPU.
   cpuRequest: 200m
   cpuUtilization: 100
+  # Saturation trigger: requests in flight per pod, 70% of maxInflight. For the
+  # real app, point inflightMetric at its active-requests gauge (e.g. OTel
+  # http_server_active_requests) - an assumption to confirm with the app team.
+  inflightMetric: http_inflight_requests
+  inflightPerPod: 5.6
   canarySteps: [10, 25, 50]
   pauseSeconds: 120
   terminationGracePeriodSeconds: 30

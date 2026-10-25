@@ -49,7 +49,7 @@ check "presync backup is an Argo CD PreSync hook" \
 check "both ScaledObjects target Rollouts" \
   "$(q "$prod" 'select(.kind=="ScaledObject") | .spec.scaleTargetRef.kind' | sort -u | tr '\n' ' ')" "Rollout "
 check "API ScaledObject scales on Traefik RPS per pod" \
-  "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="prometheus") | .metadata.threshold')" "70"
+  "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="prometheus" and (.metadata.query | test("traefik_service_requests_total"))) | .metadata.threshold')" "70"
 check "worker ScaledObject scales on list length 5" \
   "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="worker") | .spec.triggers[0].metadata.listLength')" "5"
 # The CPU trigger is a safety net: it must fire AFTER the RPS trigger, not
@@ -61,6 +61,16 @@ cpu_req=$(q "$prod" 'select(.kind=="Rollout" and .metadata.name=="api") | .spec.
 cpu_util=$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="cpu") | .metadata.value')
 check "API CPU trigger fires above the prod RPS target (126 req/s x 1.4 m)" \
   "$(awk -v r="$cpu_req" -v u="$cpu_util" 'BEGIN { print (r * u / 100 >= 126 * 1.4) ? "yes" : "no (" r "m x " u "%)" }')" "yes"
+# Completed req/s cannot exceed what the pods can serve, so under overload it
+# under-reports demand exactly when it matters: in 15x attempt 1, 3 pods had
+# 242 requests in flight (limit 8 each) while the HPA, seeing ~290 req/s, held
+# at 3. In-flight requests (served + queued) grow with the overload, so a
+# saturation trigger sizes the fleet by it. Its target must sit below the
+# per-pod concurrency limit, or it only fires once requests already queue.
+inflight=$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="prometheus" and (.metadata.query | test("http_inflight_requests"))) | .metadata.threshold')
+check "API also scales on in-flight requests per pod (saturation)" "$inflight" "5.6"
+check "in-flight target is below the per-pod concurrency limit" \
+  "$(awk -v t="${inflight:-99}" -v m="$(q "$prod" 'select(.kind=="Rollout" and .metadata.name=="api") | .spec.template.spec.containers[0].env[] | select(.name=="MAX_INFLIGHT") | .value')" 'BEGIN { print (t + 0 < m + 0) ? "yes" : "no (" t " vs " m ")" }')" "yes"
 check "API CPU request is the same for every stack size" \
   "$(q "$(render values-dev.yaml app-dev)" 'select(.kind=="Rollout" and .metadata.name=="api") | .spec.template.spec.containers[0].resources.requests.cpu')" "${cpu_req}m"
 check "Postgres and PgBouncer exporters are scraped" \

@@ -88,6 +88,8 @@ Little's law: **L = λ × W**. The concurrent jobs in progress, L, equals the ar
 
 The whole chain fits well inside the 5-minute target, even with the 3-minute ramp used in the test.
 
+**What attempt 1 of the 15x run showed (evidence 03).** This table assumed the request-rate signal tracks demand. It doesn't, once pods saturate. Completed req/s is capped by capacity, so the "doubling" step never triggered: the HPA moved 3 → 4 while the offered load went from 150 to 1,000 req/s. The table holds only with the in-flight saturation trigger (ADR-013, second revision). That trigger's step ("HPA computes in-flight / 5.6") replaces the slow `rate(...[1m])` lag whenever the fleet is overloaded.
+
 ## 6. Nodes on AWS (DESCRIBED)
 
 With the stand-in's requests (API 200m/32 Mi, worker 20m/24 Mi), the whole peak fleet (21 API + 120 workers) needs about 6.6 vCPU and 3.5 GiB. That's two `m7i.xlarge` nodes. (The API request was 50m until evidence 01 showed it made the CPU safety-net trigger fire at about 25 req/s per pod; see section 7.) A real app is heavier. Assuming **0.5 vCPU / 512 Mi per API pod at C**, the sizing works out as follows:

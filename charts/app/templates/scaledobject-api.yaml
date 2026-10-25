@@ -42,6 +42,16 @@ spec:
         # AverageValue: desired replicas = total req/s / threshold.
         query: sum(rate(traefik_service_requests_total{service=~"{{ include "app.traefikServices" . }}"}[1m]))
         threshold: {{ .Values.api.rpsPerPod | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.prometheus.url }}
+        # Saturation: requests in flight (served + queued) per pod. Completed
+        # req/s above is capped by what the pods can serve, so under overload
+        # it under-reports demand; in-flight keeps growing with the overload
+        # (Little's law: in-flight = arrivals x latency), so the HPA sizes the
+        # fleet by it (evidence 03, attempt 1).
+        query: sum({{ .Values.api.inflightMetric }}{namespace="{{ .Values.stack.namespace }}",pod=~"api-.*"})
+        threshold: {{ .Values.api.inflightPerPod | quote }}
     - type: cpu
       metricType: Utilization
       metadata:

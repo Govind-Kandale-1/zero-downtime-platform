@@ -389,6 +389,11 @@ Date · Status · Label
 - A render test enforces `request × utilization ≥ 1.4 m × 126`.
 - The same evidence run found **no database metrics** at all. The CloudNativePG Postgres and PgBouncer exporters are now scraped (`dbMetrics`, local only), so pool waits can be told apart from slow code.
 
+**Revised again 2026-10-25 (evidence 03, attempt 1): request rate alone cannot see an overload.** In the first 15x run the HPA held at 3–4 pods while the offered load climbed from 150 to 1,000 req/s. The trigger measured **completed** requests, and completed req/s can't exceed what the pods can serve. At 15:31:15, k6 offered 721 req/s, the trigger saw about 290 (a 1-minute average of a capped number), and the 3 pods held **242 requests in flight** against a limit of 8 each. The fleet saturated, latency rose, the load generator opened thousands of connections on the same VM, and the CPU starvation took KEDA and Traefik down with it (55.7% of requests failed).
+- **Added a saturation trigger: requests in flight per pod** (served + queued; target 5.6, i.e. 70% of the concurrency limit). In-flight = arrival rate × latency (Little's law), so it grows *with* the overload instead of being capped by capacity. At 15:31:15 it would have asked for 242 / 5.6 ≈ 43 pods, and the scale-up policy delivers 3 → 11 → 21 in 30 s.
+- The HPA takes the **maximum** across triggers: RPS sizes the steady state, in-flight reacts to saturation, and CPU is the safety net.
+- **Assumption for the real app:** it exposes an active-requests gauge, such as OpenTelemetry's `http.server.active_requests` (`api.inflightMetric`). If it doesn't, the fallback is Traefik's entrypoint `open_connections`, which is shared across stacks and inflated by idle keep-alives. This is in the open questions.
+
 ## ADR-018: Expand/contract migrations, a pre-sync backup, and a rollback-after-migration policy
 
 2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in) for expand + rollback; DESCRIBED for contract
@@ -417,6 +422,35 @@ Date · Status · Label
 **Consequences.**
 - Database safety becomes partly an **app-team contract** (N-1 compatibility), and code review must check it. The platform makes violations recoverable, but it can't make them impossible.
 - Every deploy costs a `pg_dump`. That is cheap at this size; at scale, use snapshots or PITR instead.
+
+## ADR-019: Backups: logical dumps locally, RDS PITR on AWS, and a scripted restore drill
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in) for dumps and the restore drill; NOT RUN for AWS
+
+**Context.** The brief asks for backups *and* a restore test. A backup that has never been restored is a hope, not a backup. Releases also run migrations at startup that may not be backward compatible (ADR-018), so a restore point must exist right before every sync, not just on a timer.
+
+**Decision.**
+- **Local (CloudNativePG):**
+  - An **hourly `pg_dump -Fc` CronJob** (24 kept), plus the **Argo CD PreSync hook** dump before every sync.
+  - Both write to the **provider-layer volume `pg-backups`**. Terraform creates it, so no chart sync or hook policy can ever delete it (evidence of why: Task 16, ADR-018).
+  - Next to each dump the job writes a **`.counts` file**: the row count and an md5 of the `items` table, computed at backup time. That's the restore test's oracle.
+- **Restore drill: `scripts/restore-test.sh <ns>`.** It takes a fresh backup with the stack's own CronJob, creates a **throwaway CNPG cluster** in the same namespace, runs `pg_restore` from the backup volume, recomputes the count and md5, and prints `RESTORE PASS rows=… md5=… rto_seconds=…`. It never touches the live database.
+- **Valkey (the queue):** AOF persistence (`everysec`), so a crash loses at most about 1 s of enqueues. It isn't dumped: queue contents are in-flight work, not records. On AWS, ElastiCache Multi-AZ with 7 daily snapshots.
+- **AWS (NOT RUN):**
+  - RDS **automated backups with point-in-time restore, 14 days**, Multi-AZ, deletion protection, and a final snapshot on delete.
+  - The pre-sync restore point is a manual RDS snapshot, or simply a PITR timestamp: the sync time from Argo CD history.
+
+**Rejected alternatives.**
+- *CNPG Barman backups to object storage:* the right choice for CNPG in production (continuous WAL archiving, PITR). Locally it needs MinIO as one more component, and on AWS RDS replaces CNPG anyway.
+- *Velero volume snapshots:* kind's local-path storage has no snapshot support. And a crash-consistent volume copy is harder to verify than a logical dump.
+- *Restoring over the live database as the test:* destructive, and it measures nothing the scratch-cluster drill doesn't.
+
+**Consequences.**
+- **RPO, local:** at most 1 hour, or the time since the last deploy if that's shorter. **RPO, AWS:** about 5 minutes (PITR).
+- **RTO measured locally: about 45 s**, mostly creating the new instance (evidence 04). That's for the stand-in's 1,000 rows. Real RTO scales with data size: a logical restore of tens of GB, plus index builds, takes tens of minutes, and an RDS PITR to a new instance takes 10–30 minutes. One restore uses most of a 99.95% SLO's monthly error budget (21.9 min). That's why restore is the last resort and fix-forward the default (ADR-018).
+- **Same failure domain, locally:** the dumps live on the same laptop disk as the database. On AWS the backups are in a separate service. **Cross-region copies** inside the EU (AWS Backup copy to `eu-west-1` for EU tenants) are on the roadmap, not written.
+- **Known gap:** `.counts` is computed in a separate transaction just after the dump. With concurrent writes it can differ from the dump's snapshot. The stand-in's `items` table is read-only, so this holds today. For the real app: `pg_dump --snapshot` on an exported snapshot, and the counts taken inside that same snapshot.
+- The drill runs by hand today. **Scheduling it weekly** (a CronJob or a CI job, alerting on `RESTORE FAIL`) is on the roadmap.
 
 ## ADR-023: SLOs on edge SLIs with multi-window, multi-burn-rate alerts
 

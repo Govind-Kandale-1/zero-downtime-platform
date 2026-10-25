@@ -256,6 +256,14 @@ No down-migrations: they're rarely tested and can't restore dropped data.
 
 **Point to:** ADR-013 (revised), `evidence/01-deploy-under-load/README.md`.
 
+### Q: Your first 15x run failed. Why, and what changed?
+**A:** The autoscaler was watching the wrong thing during an overload. It scaled on *completed* requests per second, and that number can't exceed what the pods can serve. As offered load climbed past capacity, the signal flattened at about 290 req/s while 3 pods held 242 requests in flight (limit 8 each), so the HPA stayed at 3. Latency rose, k6 opened thousands of connections on the same VM, and CPU starvation then took KEDA and Traefik down with it: 55.7% of requests failed. The fix is a second trigger on **in-flight requests per pod**. By Little's law in-flight = arrival rate × latency, so it grows with the overload instead of saturating. The HPA takes the max of request rate (steady sizing), in-flight (saturation) and CPU (safety net). Jobs were fine throughout: 2,327 enqueued, 2,327 done.
+**Follow-ups:**
+- "Wouldn't that happen on AWS too?" Yes. The laptop only made it collapse faster. A capped signal under-reports demand on any cloud.
+- "What if the real app has no in-flight metric?" Use its OpenTelemetry active-requests gauge if it has one. Otherwise Traefik's entrypoint open connections, which are noisier. Or put the concurrency limit at the edge and scale on queue time there.
+
+**Point to:** ADR-013 (second revision), `evidence/03-load-15x/README.md`.
+
 ### Q: Doesn't scaling workers down kill jobs?
 **A:** No. KEDA scale-in sends SIGTERM like any other stop: the worker stops claiming and finishes its current job within the 90 s grace period. If it's killed anyway, the reaper requeues the job. Scale-down is also damped (a 5-minute window, at most −20% per minute), so a brief dip in the queue doesn't trigger a mass stop.
 **Point to:** ADR-006, ADR-013.

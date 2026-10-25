@@ -10,6 +10,9 @@ const BASE = Number(__ENV.BASE_RPS || 150);
 const PEAK = BASE * 15;
 
 export const options = {
+  // k6 shares the laptop's Docker VM with the cluster under test (attempt 1
+  // starved it); bodies are never inspected, so don't spend CPU keeping them.
+  discardResponseBodies: true,
   scenarios: {
     ramp15x: {
       executor: 'ramping-arrival-rate',
