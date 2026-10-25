@@ -177,3 +177,27 @@ Date · Status · Label
 **Consequences.**
 - Delivery is **at-least-once**. A job finished just before a crash (before `Ack`) runs again, so real jobs must be idempotent. This is listed as an assumption about the black box.
 - After an ungraceful death, a job waits up to ~30 s (heartbeat TTL) plus up to 15 s (reaper interval) before it is retried.
+
+## ADR-004: Terraform for the provider layer; `pg` backend locally, S3 with native locking on AWS
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (local) / NOT RUN (AWS)
+
+**Context.** The brief requires IaC, remote state and drift detection, starting from an empty account with no console steps. The provider layer must create clusters, networks, managed databases and IAM on any cloud.
+
+**Decision.**
+- **Terraform** (≥ 1.14), one numbered root per stage (`10-cluster`, `20-data`, `30-gitops`; AWS adds `05-network`).
+- **Local state:** the `pg` backend, pointed at a Postgres container (`zdp-tfstate`) started by `scripts/state-up.sh`. Each root gets its own schema, and locking uses Postgres advisory locks. The credentials live in the git-ignored `.local/tfstate.env`.
+- **AWS state:** the `s3` backend with `use_lockfile = true` (S3-native conditional-write locking, so no DynamoDB table). The bucket is created by `infra/bootstrap/aws`, which uses local state.
+
+**Rejected alternatives.**
+- *OpenTofu:* functionally equivalent here and a fine choice. Terraform is already installed and more commonly asked about, and the code runs on both.
+- *Pulumi / CDK:* infrastructure in a general-purpose language. It adds a second toolchain and a different review model, and gives no advantage for declarative cloud resources.
+- *Crossplane:* needs a cluster before it can build one, and adds a control plane to operate (see ADR-003).
+- *Local state for the local target:* violates "remote state" and has no locking.
+- *S3 emulation (MinIO/LocalStack) to mirror AWS exactly:* adds a component whose licensing and distribution have changed recently. The interesting property is *networked state with locking*, which the pg backend gives directly.
+- *The Kubernetes backend:* state would live inside the cluster that Terraform creates (chicken-and-egg), and destroying the cluster would destroy the state.
+
+**Consequences.**
+- The backend *type* differs per target (`pg` vs `s3`), so it is listed as non-portable. Everything else in the roots is identical.
+- The bootstrap stack for AWS keeps local state by necessity; this is documented.
+- Drift detection is `terraform plan -detailed-exitcode` per root (exit 2 = drift).

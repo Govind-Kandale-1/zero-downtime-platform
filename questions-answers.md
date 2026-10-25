@@ -51,6 +51,22 @@ Everything above that (Argo CD, Traefik, Rollouts, KEDA, the app chart) only con
 **A:** Every tool is pinned in `config/versions.env`. Locally, `scripts/lib/tools.sh` runs the pinned container when the binary isn't installed, so versions match CI exactly. Line endings are forced to LF and checked in CI, because CRLF silently breaks bash, YAML and Terraform.
 **Point to:** ADR-021, `scripts/lib/code-review.md`.
 
+### Q: Where is Terraform state, and how is it locked?
+**A:**
+- **Locally:** a dedicated Postgres container, through Terraform's `pg` backend. Each root module has its own schema, and Postgres advisory locks stop two applies from racing. The connection string sits in a git-ignored file, never in code.
+- **On AWS:** an S3 bucket with versioning and KMS encryption, using S3's native lockfile, so no DynamoDB table is needed since Terraform 1.10/1.11.
+
+**Follow-ups:** "Prove it's remote." `select name from local_10_cluster.states` returns the state row, and there's no `terraform.tfstate` in the repo.
+**Point to:** ADR-004, `infra/live/local/code-review.md`.
+
+### Q: What's the chicken-and-egg problem with remote state, and how do you solve it?
+**A:** The bucket (or database) that holds state has to exist before any root can use it, so whatever creates it can't keep its own state there. The answer is a tiny bootstrap step:
+- **AWS:** `infra/bootstrap/aws` uses *local* state to create the S3 bucket and the GitHub OIDC role, once. Its state can then be migrated into the bucket.
+- **Locally:** a script starts the state container before Terraform runs.
+
+The same logic is why the Kubernetes backend was rejected: state would live inside the cluster Terraform creates.
+**Point to:** ADR-004.
+
 ## 3. Multi-stage pipeline
 
 ### Q: How can the pipeline commit to a protected `main`?
