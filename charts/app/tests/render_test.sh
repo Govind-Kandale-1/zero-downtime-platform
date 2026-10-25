@@ -37,6 +37,13 @@ check "chart does not own the backup PVC (provider layer does)" \
   "$(q "$prod" 'select(.kind=="PersistentVolumeClaim") | .metadata.name' | wc -l | tr -d ' ')" "0"
 check "backup jobs mount the provider-layer claim" \
   "$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .spec.template.spec.volumes[] | select(.name=="backups") | .persistentVolumeClaim.claimName')" "pg-backups"
+# A backup job that hangs (e.g. its pod can never schedule) must fail, not
+# block: with concurrencyPolicy Forbid and no deadline, one stuck job silently
+# skipped every later hourly backup of both tenants for 3 hours (evidence 04).
+check "backup jobs give up after backup.timeoutSeconds instead of blocking the schedule" \
+  "$(q "$prod" 'select(.kind=="CronJob" and .metadata.name=="backup") | .spec.jobTemplate.spec.activeDeadlineSeconds'),$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .spec.activeDeadlineSeconds')" "900,900"
+check "an alert fires when backups are stale or have never succeeded" \
+  "$(q "$prod" 'select(.kind=="PrometheusRule") | .spec.groups[].rules[] | select(.alert=="ZdpBackupStale") | .expr' | grep -c 'kube_cronjob_created')" "1"
 check "presync backup is an Argo CD PreSync hook" \
   "$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .metadata.annotations["argocd.argoproj.io/hook"]')" "PreSync"
 check "both ScaledObjects target Rollouts" \
@@ -106,15 +113,16 @@ rm -rf "$pkg"
 # PromQL inside the PrometheusRule is just a string to Helm and kubeconform;
 # promtool (same version as the cluster's Prometheus) actually parses it.
 tmp=$(mktemp -d)
-q "$tenant" 'select(.kind=="PrometheusRule") | .spec' > "$tmp/rules.yaml"
+# Every PrometheusRule (SLO + backup) merged into one rules file.
+printf '%s\n' "$tenant" | tool_yq ea -N '[select(.kind=="PrometheusRule") | .spec.groups[]] | {"groups": .}' > "$tmp/rules.yaml"
 # mktemp dirs are 0700; the distroless Prometheus image runs as nobody.
 chmod -R a+rX "$tmp"
 if out=$(MSYS_NO_PATHCONV=1 docker run --rm -v "$(host_path "$tmp"):/r" --entrypoint promtool \
     "$PROMETHEUS_IMAGE" check rules /r/rules.yaml 2>&1); then
-  check "promtool parses SLO recording + alert rules" ok ok
+  check "promtool parses SLO + backup recording and alert rules" ok ok
 else
   printf '%s\n' "$out" | tail -5
-  check "promtool parses SLO recording + alert rules" invalid ok
+  check "promtool parses SLO + backup recording and alert rules" invalid ok
 fi
 rm -rf "$tmp"
 

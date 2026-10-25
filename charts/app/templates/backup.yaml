@@ -26,6 +26,10 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 1
+      # With Forbid, a job that never finishes (pod unschedulable, dump hung)
+      # would block every later run - silently. The deadline fails it instead,
+      # and ZdpBackupStale below makes the failure visible.
+      activeDeadlineSeconds: {{ .Values.backup.timeoutSeconds }}
       template:
         spec:
           {{- include "app.backupPod" (dict "root" . "prefix" "backup") | nindent 10 }}
@@ -44,8 +48,42 @@ metadata:
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 1
+  activeDeadlineSeconds: {{ .Values.backup.timeoutSeconds }}
   ttlSecondsAfterFinished: 3600
   template:
     spec:
       {{- include "app.backupPod" (dict "root" . "prefix" "presync") | nindent 6 }}
+---
+# Backups that silently stop are the failure nobody sees until a restore is
+# needed. Fires when the newest successful hourly backup is older than 2 h (two
+# missed runs), or when the CronJob is older than 2 h and has NEVER succeeded
+# (kube-state-metrics then has no last_successful_time series at all, so a
+# staleness check alone would stay silent).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backup
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: {{ printf "zdp-backup-%s" .Values.stack.name }}
+      rules:
+        - alert: ZdpBackupStale
+          expr: |
+            (time() - kube_cronjob_status_last_successful_time{namespace="{{ .Values.stack.namespace }}",cronjob="backup"}) > 7200
+            or
+            (
+              (time() - kube_cronjob_created{namespace="{{ .Values.stack.namespace }}",cronjob="backup"}) > 7200
+              unless on (namespace, cronjob)
+              kube_cronjob_status_last_successful_time{namespace="{{ .Values.stack.namespace }}",cronjob="backup"}
+            )
+          for: 10m
+          labels:
+            severity: ticket
+            stack: {{ .Values.stack.name }}
+            tier: {{ .Values.stack.tier }}
+          annotations:
+            summary: {{ printf "%s: no successful database backup for over 2 hours" .Values.stack.name | quote }}
+            runbook_url: https://github.com/Govind-Kandale-1/zero-downtime-platform/blob/main/docs/runbooks/backup-stale.md
 {{- end }}

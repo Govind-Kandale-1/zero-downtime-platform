@@ -16,18 +16,21 @@
 |---|---|---|
 | `api.canarySteps` / `pauseSeconds` | 10, 25, 50 / 120 s (60 s locally) | Small blast radius first; each pause gets at least one 1-minute analysis measurement |
 | `api.minReplicas` | 3 | One per zone, so losing a zone (or a node locally) leaves capacity |
-| `api.rpsPerPod` | 70 (placeholder) | Set to 70% of the measured per-pod capacity once the load test calibrates it |
+| `api.rpsPerPod` | 70 (placeholder) | 70% of the measured per-pod capacity; prod sets the calibrated 126 |
+| `api.cpuRequest` / `api.cpuUtilization` | 200m / 100 | The CPU safety net fires at ~143 req/s per pod: after the RPS trigger, before saturation. One value for every size, because CPU follows per-pod load (~1.4 m per req/s, measured in evidence 01) |
 | `worker.terminationGracePeriodSeconds` | 90 | Longer than the 60 s maximum job, so draining never kills work |
 | `worker.maxReplicas` | 120 | Little's law at 5.56 jobs/s × 10 s ≈ 56, with headroom (ADR-024) |
 | `analysis.*` | success ≥ 99%, p95 ≤ 0.4 s, ≥ 20 requests/min | Matches the brief's p95 target; below the minimum count the result is *inconclusive*, never a pass |
 | `backup.mode` | `pgdump` | Local CNPG. `managed` means RDS automated backups + PITR on AWS |
+| `backup.timeoutSeconds` | 900 | A hung backup job fails instead of blocking later runs |
+| `dbMetrics` | true | Scrape the CloudNativePG Postgres + PgBouncer exporters (local only; `false` on AWS) |
 
 **Assumptions about the platform:**
 - Traefik labels weighted child services as `<namespace>-<service>-<port>@kubernetescrd`, and its ServiceMonitor uses `honorLabels: true`, so `service=` is Traefik's label. This is checked live during the first deployment.
 - The stack Application must ignore drift on `TraefikService` weights (`ignoreDifferences`). Otherwise Argo CD self-heal would reset the weights Argo Rollouts sets mid-canary.
 
 **Verify:**
-- `bash charts/app/tests/render_test.sh`: 23 checks.
+- `bash charts/app/tests/render_test.sh`: 31 checks.
 - `helm lint charts/app -f charts/app/tests/values-prod.yaml --kube-version 1.34.0`.
 
 **Label:** RUN-LOCAL (stand-in).
