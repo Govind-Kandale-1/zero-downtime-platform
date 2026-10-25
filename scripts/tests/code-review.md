@@ -8,7 +8,9 @@
 
 | `image_smoke_test.sh` | Builds `zdp-app:test`, then runs it against real Postgres + Valkey on network `zdp-smoke`. It asserts: `/healthz` 200; `/readyz` 200 within 20 s (migrations done, dependencies reachable); `/api/items/7`; `POST /api/jobs` 202; the worker container completes the job (`jobs:done_total=1`); `docker stop` gives **exit 0 in under 30 s**, which proves SIGTERM draining rather than a SIGKILL; compressed pull size < 25 MB. |
 
-More tests (`bump_release_test.sh`, `gate_test.sh`, `docs_test.sh`) are added by later build steps.
+| `bump_release_test.sh` | Uses throwaway bare and clone repos, so it never touches GitHub. It checks: a promotion succeeds even after someone else pushed to main (rebase and retry); the other commit is preserved; the release file pins both the version and the digest; re-promoting the same artifact is a no-op; malformed digests and unknown stages are rejected. |
+
+More tests (`gate_test.sh`, `docs_test.sh`) are added by later build steps.
 
 **Windows note:** Git Bash rewrites arguments that look like absolute paths (`/worker` → `C:/Program Files/Git/worker`). The smoke test wraps `docker` with `MSYS_NO_PATHCONV=1`, scoped to docker only, because native `git.exe` still needs the conversion.
 

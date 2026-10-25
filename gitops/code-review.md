@@ -8,7 +8,7 @@
 | `clusters/local/apps/` | One Argo CD `Application` (or `ApplicationSet`) per platform component and stack group. Sync waves order CRDs → operators → config → workloads. |
 | `platform/` | Values and plain manifests for platform components, with per-provider overlays (`values/local`, `values/aws`). |
 | `stacks/` | One file per environment stack: a Terraform descriptor plus Helm values. |
-| `releases/` | One file per release stage (`dev`, `staging`, `prod-ring0`, `ring1`, `ring2`), pinning the **chart version and image digest**. Promotion is a commit that copies a digest from one file to the next. |
+| `releases/` | One file per release stage (`dev`, `staging`, `prod-ring0`, `ring1`, `ring2`), pinning the **chart version and image digest** (`stage`, `chart.version`, `image.repository`, `image.digest`). Written only by `scripts/bump-release.sh`, and created on first promotion; a missing file means nothing has been released to that stage. Promotion is a commit that copies a digest from one file to the next. |
 
 **How a change flows:**
 1. Something is committed (a human PR, or a pipeline promotion).
