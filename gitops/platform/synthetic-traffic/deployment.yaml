@@ -1,6 +1,6 @@
-# Synthetic traffic (ADR-016). Scaled to 0 with a placeholder image until the
-# first release is published; the bring-up step then pins the image digest and
-# sets replicas: 1 (a deliberate, reviewed manual change).
+# Synthetic traffic (ADR-016). Pinned by digest to the first published image
+# (a deliberate, reviewed change - this tooling never moves with app releases).
+#
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/name: synthetic-traffic
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: synthetic-traffic
@@ -23,7 +23,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: synthetic
-          image: ghcr.io/govind-kandale-1/zero-downtime-platform:placeholder
+          image: ghcr.io/govind-kandale-1/zero-downtime-platform@sha256:f91b81a532996c027e73b3c689246593d7d95400f055a41e2177241c894bc4e7
           command: ["/synthetic"]
           env:
             - name: TRAFFIC_TARGET
