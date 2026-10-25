@@ -1,0 +1,30 @@
+# Who gets evicted first when nodes are full.
+#   platform-critical  ingress, controllers: must outlive app pods
+#   app                every stack's API and worker
+#   overprovision      negative priority "pause" pods holding spare capacity;
+#                      the scheduler evicts them instantly for real pods while
+#                      the node autoscaler adds nodes (used on AWS; DESCRIBED locally)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-critical
+value: 100000
+globalDefault: false
+description: Platform components (ingress, controllers).
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: app
+value: 1000
+globalDefault: false
+description: Application workloads (API, worker).
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: overprovision
+value: -10
+globalDefault: false
+preemptionPolicy: Never
+description: Placeholder pods that reserve headroom for scale-up bursts.

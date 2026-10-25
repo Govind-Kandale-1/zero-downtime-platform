@@ -1,0 +1,24 @@
+# Wave 1: constant low traffic to every stack so canary analysis always has
+# data (ADR-016). Platform tooling, not part of the black-box contract.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: synthetic-traffic
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+    targetRevision: main
+    path: gitops/platform/synthetic-traffic
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: synthetic
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted

@@ -1,0 +1,41 @@
+# Traefik on kind: NodePorts mapped to host 80/443 by the kind config.
+# On AWS the same chart runs as type LoadBalancer behind an NLB (values/aws).
+service:
+  type: NodePort
+ports:
+  web:
+    nodePort: 30080
+  websecure:
+    nodePort: 30443
+
+providers:
+  kubernetesCRD:
+    # Shared-tenant routes live in app-prod but are owned by the tenant-route
+    # chart; weighted TraefikServices reference Services across namespaces.
+    allowCrossNamespace: true
+  kubernetesIngress:
+    enabled: false
+
+ingressRoute:
+  dashboard:
+    enabled: false
+
+metrics:
+  prometheus:
+    # Buckets include 0.4 s so "share of requests under 400 ms" (the latency
+    # SLI) and the canary p95 gate are exact, not interpolated.
+    buckets: "0.05,0.1,0.2,0.3,0.4,0.5,1,2.5,5"
+    addEntryPointsLabels: true
+    addRoutersLabels: true   # per-host router = per shared-tenant visibility
+    addServicesLabels: true  # per-Service = stable vs canary for analysis
+    service:
+      enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 15s
+
+deployment:
+  replicas: 1
+resources:
+  requests: { cpu: 100m, memory: 64Mi }
+  limits: { memory: 256Mi }

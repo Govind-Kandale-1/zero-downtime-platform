@@ -1,0 +1,76 @@
+# Observability for a laptop: short retention, small requests, 15 s scrapes
+# so canary analysis and KEDA react quickly.
+crds:
+  enabled: false # installed by the prometheus-operator-crds app (wave -2)
+
+# kind runs these control-plane components without exposed metrics endpoints;
+# scraping them only produces permanently-down targets and noise alerts.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 12h
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    # Pick up ServiceMonitors/PodMonitors/PrometheusRules from every namespace,
+    # not only those labelled for this Helm release (app charts ship their own).
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 200m, memory: 600Mi }
+      limits: { memory: 1200Mi }
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 128Mi }
+  # Local target: alerts are visible in Alertmanager/Grafana but not delivered
+  # anywhere (a real install routes page → on-call, ticket → issue tracker).
+  config:
+    route:
+      receiver: local-only
+      group_by: [alertname, namespace]
+      routes:
+        - receiver: "null"
+          matchers: ['alertname = "Watchdog"']
+    receivers:
+      - name: local-only
+      - name: "null"
+
+grafana:
+  # Local only (bound to 127.0.0.1): anonymous read access so dashboards open
+  # without a password; the admin login keeps the chart default.
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+    server:
+      root_url: http://grafana.localtest.me
+  resources:
+    requests: { cpu: 25m, memory: 128Mi }
+    limits: { memory: 384Mi }
+
+prometheusOperator:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    limits: { memory: 128Mi }
+
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { memory: 64Mi }
