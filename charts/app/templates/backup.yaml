@@ -6,12 +6,19 @@ restore. Each dump gets a .counts file (row count + md5 over the rows) that the
 restore test compares against. On AWS (backup.mode: managed) RDS automated
 backups + point-in-time recovery replace all of this.
 */ -}}
+# The PreSync backup Job mounts this claim, and hooks run before ordinary
+# resources are created - so on a first install the claim must itself be a
+# PreSync hook with a lower weight, or the Job pod waits forever (Pending).
+# No hook-delete-policy: the claim (and the dumps on it) persist across syncs.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: backups
   labels:
     {{- include "app.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-weight: "-1"
 spec:
   accessModes: [ReadWriteOnce]
   resources:

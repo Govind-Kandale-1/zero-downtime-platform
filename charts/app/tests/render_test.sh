@@ -28,6 +28,8 @@ check "worker terminationGracePeriodSeconds 90" \
   "$(q "$prod" 'select(.kind=="Rollout" and .metadata.name=="worker") | .spec.template.spec.terminationGracePeriodSeconds')" "90"
 check "presync backup secret is optional" \
   "$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .spec.template.spec.containers[0].envFrom[0].secretRef.optional')" "true"
+check "backup PVC is created first on install (PreSync hook, weight below the job)" \
+  "$(q "$prod" 'select(.kind=="PersistentVolumeClaim" and .metadata.name=="backups") | .metadata.annotations["argocd.argoproj.io/hook"] + "/" + .metadata.annotations["argocd.argoproj.io/hook-weight"]')" "PreSync/-1"
 check "presync backup is an Argo CD PreSync hook" \
   "$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .metadata.annotations["argocd.argoproj.io/hook"]')" "PreSync"
 check "both ScaledObjects target Rollouts" \
