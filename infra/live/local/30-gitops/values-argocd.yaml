@@ -6,6 +6,11 @@ global:
 configs:
   params:
     server.insecure: true # TLS is terminated at the ingress (plain HTTP locally)
+    # Apps sync with ServerSideApply, so compare server-side too: only fields
+    # Argo CD applied are diffed. With the legacy client-side diff, fields that
+    # other controllers own (Argo Rollouts' Service selectors, KEDA-managed
+    # replicas) show Rollouts/Services as permanently OutOfSync.
+    controller.diff.server.side: "true"
   cm:
     timeout.reconciliation: 60s
     timeout.reconciliation.jitter: 10s
