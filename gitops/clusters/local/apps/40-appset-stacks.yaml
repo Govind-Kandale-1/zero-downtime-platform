@@ -68,3 +68,9 @@ spec:
           kind: TraefikService
           jsonPointers:
             - /spec/weighted/services
+        # Argo Rollouts rewrites the stable/canary Service selectors (an atomic
+        # map, so it then owns the whole selector); fields it owns are its to set.
+        - group: ""
+          kind: Service
+          managedFieldsManagers:
+            - rollouts-controller
