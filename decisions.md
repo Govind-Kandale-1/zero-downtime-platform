@@ -290,3 +290,27 @@ Date · Status · Label
 - A promotion takes effect within about 60 s plus sync time, not instantly. That is acceptable and visible.
 - The pipeline needs a way to *observe* the result without pushing. Gates read Rollout status and metrics with read-only credentials (ADR-015).
 - Git becomes production-critical. If GitHub is down, nothing new deploys, but running workloads are unaffected.
+
+## ADR-016: Synthetic traffic so canary analysis is never inconclusive
+
+2026-10-25 · Accepted · Label: RUN-LOCAL (platform tooling)
+
+**Context.**
+- Canary gates evaluate real metrics (error ratio, p95) for the canary's share of traffic.
+- When a query returns no data, Argo Rollouts marks the measurement *inconclusive*, and an inconclusive analysis **pauses** the rollout. It neither passes nor aborts.
+- Locally, dev, staging and the tenant stacks receive no user traffic, so every pipeline run would stall at its first gate.
+- In production, low-traffic tenants and off-peak hours have the same problem.
+
+**Decision.**
+- One small Deployment (`synthetic-traffic`, 32 Mi) sends a constant ~10 req/s per stack, plus one job per 10 s, **through the ingress** with each stack's `Host` header. Every request carries `X-Synthetic: 1`.
+- The analysis templates include synthetic traffic and also require a minimum request count, so too little data is never mistaken for health.
+- Dashboards can exclude synthetic requests from user-facing numbers.
+
+**Rejected alternatives.**
+- *Treat no-data as a pass:* a canary that receives zero requests would be promoted untested.
+- *Skip analysis on non-prod:* then dev and staging prove nothing, and the first real gate is production.
+- *k6 or blackbox-exporter as the generator:* k6 is built for bounded tests (its trend metrics grow in memory over long runs). Blackbox-exporter probes only, at a low rate. Both remain good choices for a production version.
+
+**Consequences.**
+- Every stack has a permanent baseline of known-good requests. This doubles as **black-box monitoring**: synthetic errors mean the stack is broken, whether or not users noticed.
+- At 10 req/s and a 10% canary weight, the canary sees about 1 req/s. That is enough to detect a 30% fault rate within the 1-minute analysis interval, though not subtle regressions. Production traffic does that.

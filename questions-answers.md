@@ -105,6 +105,11 @@ The cost is that the pipeline can't directly "see" the deployment. My gates read
 **Follow-ups:** "Why Argo CD over Flux?" Both are fine. Argo's UI and native Argo Rollouts integration (abort/promote, rollout health) matter for operating canaries, and ApplicationSets fan out tenants from files.
 **Point to:** ADR-010.
 
+### Q: Why is there synthetic traffic? Doesn't it distort your SLIs?
+**A:** Argo Rollouts treats "no data" as inconclusive and pauses the rollout. Dev, staging and the tenant stacks get no user traffic locally, so without it every canary would stall. A tiny generator sends 10 req/s per stack through the real ingress. Requests carry `X-Synthetic: 1`, so user-facing dashboards can exclude them, while canary analysis deliberately includes them. It also works as a black-box probe: if synthetic requests fail, the stack is broken whether or not anyone noticed.
+**Follow-ups:** "Is 1 req/s to a 10% canary enough?" It's enough to catch a gross failure (the demo bug fails 30% of requests) within a minute, not a subtle regression. That's what production traffic, longer steps and a minimum-request-count guard are for.
+**Point to:** ADR-016, `app/cmd/synthetic/code-review.md`.
+
 ### Q: How is drift handled?
 **A:** At two layers:
 - **Cluster objects:** Argo CD auto-sync with `selfHeal` and `prune`. Manual changes are reverted, and objects deleted from Git are deleted from the cluster.
