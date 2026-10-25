@@ -1,5 +1,7 @@
 # Runbook: queue backlog (`ZdpQueueBacklog`)
 
+**Label:** DESCRIBED (a procedure, not exercised end to end).
+
 **Trigger:** page. The oldest queued job has waited more than 300 s (5× the longest job) for 5 minutes.
 
 **User impact:** jobs finish minutes late. **Nothing is lost** at this point: the queue is durable (Valkey AOF) and accepted jobs stay queued until processed (evidence 03: enqueued = done in every load test). The risk grows if Valkey fills up: with `noeviction`, new enqueues then fail with 503.

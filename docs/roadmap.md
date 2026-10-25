@@ -7,10 +7,11 @@
 | # | Work | Why | Done when |
 |---|---|---|---|
 | 1 | **First AWS apply** of the NOT RUN code in a sandbox account: `bootstrap/aws` → `05-network` → `10-cluster` → `20-data` → `30-gitops` | Static validation is not a deploy; the EU guard-rails, Pod Identity and Karpenter have never run | All Argo CD apps Healthy on EKS; the contract test passes against RDS/ElastiCache/Secrets Manager |
-| 2 | **The headroom fix** (ADR-013, third revision): a 30 s rate window, 5 s scrape and KEDA poll for the scaling metrics, `rpsPerPod` ≈ 80, `inflightPerPod` 3.5 | The current targets saturate for 30–60 s mid-ramp on any infrastructure (evidence 03) | Render tests updated; the 15x test (item 3) shows no saturation |
+| 2 | **The headroom fix** (ADR-013, third revision): a 30 s rate window and a 5 s scrape for the scaling metrics, `rpsPerPod` ≈ 80, `inflightPerPod` 3.5 | The current targets saturate for 30–60 s mid-ramp on any infrastructure (evidence 03) | Render tests updated; the 15x test (item 3) shows no saturation |
 | 3 | **15x test on EKS** with the load generator *outside* the cluster (EC2 in another VPC, or k6 Cloud) | The laptop's ceiling (~650–800 req/s) made the full test impossible locally | 150 → 2,250 req/s in ≤ 5 min: 0 failed requests, hold-phase p95 < 400 ms, `enqueued == done` |
 | 4 | **Worker scaling on outstanding jobs** (`listLength: 1`, or waiting + in-progress via Prometheus) | `listLength: 5` keeps ~280 jobs waiting at peak, about 50 s of pure queueing (evidence 03) | Oldest-job age at peak < 15 s with the same worker count |
 | 5 | **Close the black-box assumptions** with the app team: SIGTERM drain, job idempotency, an older version tolerating a newer schema, an active-requests metric, queue age, response size | The design relies on each of them (architecture doc, risks 2–3) | Each one confirmed, or a mitigation merged |
+| 6a | **CI on every push to `main`**, not only on PRs and dispatch | An admin push bypassed CI, and a broken test sat on `main` for a day (ADR-020, revised) | Every commit on `main` has a CI run; a red `main` blocks the next release |
 | 6 | **Kyverno image verification** at admission (cosign keyless, the GitHub OIDC identity regex) | Signing without verification is only half a supply chain | An unsigned image is rejected in every stack namespace (a test proves it) |
 
 ## Days 31–60: automate the last manual steps

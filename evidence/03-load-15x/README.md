@@ -13,7 +13,7 @@
 
 **Result:**
 - **55.7% of requests failed** (74,750 of 134,264). Base-phase p95 was 853 ms, ramp and hold p95 above 10 s (`ramp-15x.txt`). The run was stopped at 77%.
-- **Jobs: no loss.** 2,327 jobs were enqueued during the run and 2,327 completed; 0 failed, queue empty (`job-counters.txt`). The producer saw 48% of its POSTs fail at the edge, so those jobs were never accepted, and so never lost.
+- **Jobs: no loss.** 2,327 jobs were enqueued during the run and 2,327 completed, with 0 failed and the queue empty (`job-counters.txt`). The producer counted 1,563 POSTs as accepted and 1,461 as failed, most of them 10 s client timeouts. The ~57 synthetic jobs don't close the gap, so **roughly 700 of those "failed" POSTs were in fact enqueued, and processed**: the client gave up, the server didn't. For the producer that means a retry would duplicate the job, so jobs must be idempotent (ADR-006).
 
 **What happened** (Prometheus, 15-second steps):
 
@@ -84,7 +84,7 @@ Reactive scaling has to add capacity *before* the load reaches current capacity.
 
 > **headroom needed = ramp slope × reaction time**
 
-**Reaction time.** The 1-minute rate window lags a linear ramp by about 30 s. Add the scrape (15 s, about 7.5 s on average), the KEDA poll (10 s, about 5 s), the HPA sync (15 s, about 7.5 s), and pod start to ready (about 10 s on a healthy cluster). That's **about 60 s, and 90 s on the loaded laptop**.
+**Reaction time.** The 1-minute rate window lags a linear ramp by about 30 s. Add the scrape (15 s, about 7.5 s on average), the HPA sync (15 s, about 7.5 s), and pod start to ready (about 10 s on a healthy cluster). That's **about 55–60 s, and 90 s on the loaded laptop**. KEDA's `pollingInterval` isn't part of the chain: with `minReplicaCount` ≥ 1, the HPA queries KEDA's metrics server on its own sync, as KEDA's warning in `attempt-1/preflight.txt` says.
 
 **Headroom available.** It's `pods × C × (1 − target utilisation)`. With `rpsPerPod` 126 = 70% of the calibrated C of 180, each pod has 54 req/s spare. Under test conditions (58 worker pods, k6 and Traefik on the same VM), effective C fell to about 160–165, leaving about 35–40 per pod.
 
@@ -98,7 +98,7 @@ Reactive scaling has to add capacity *before* the load reaches current capacity.
 - **On this laptop**, saturation is fatal. The pile-up of queued requests and k6 connections starves the VM that also runs the control plane, so the new pods can't become ready.
 
 **The fix, designed but not applied** (ADR-013 third revision, roadmap):
-1. **Shorten the reaction time:** `rate(...[30s])`, a 5 s scrape and KEDA poll for the scaling metrics. That brings it to about 35–40 s.
+1. **Shorten the reaction time:** `rate(...[30s])` and a 5 s scrape for the scaling metrics. That brings it to about 35 s. The HPA's 15 s sync is a control-plane setting, fixed on EKS.
 2. **Size the target for the ramp, not only for steady state:** `rpsPerPod` ≈ 80 (about 45–50% of C) and `inflightPerPod` 3.5. Prod at peak then needs about 30 API pods instead of about 18–21. On AWS that is about 4.5 vCPU more *while the peak lasts* (one more `m7i.xlarge` at $0.2415/hour on demand), at most $176/month even if peak capacity ran around the clock (`docs/cost.md`).
 3. **For peaks known in advance** (campaigns, launches): KEDA `cron` pre-scaling, which removes the reaction time altogether.
 
@@ -112,7 +112,7 @@ During steady job load (attempt 3, 17:51–17:57), the queue held **260–290 wa
 
 | Claim | Status |
 |---|---|
-| Jobs are never lost under overload (accepted = processed) | **Proven** in all three attempts (2,327 / 3,171 / 3,716 jobs enqueued during each window, all completed, 0 failed, queue drained) |
+| No job is lost under overload: every job the server enqueued was processed (`enqueued_total` = `done_total`) | **Proven** in all three attempts (2,327 / 3,171 / 3,716 enqueued during each window, all completed, 0 failed, queue drained). In each attempt, several hundred POSTs that timed out at the client were nevertheless enqueued, so a client retry can duplicate a job |
 | The scaling *mechanism* reacts to overload within 30 s | **Proven** (attempt 2: in-flight 357 → HPA 4 → 12 → 21) |
 | The edge survives one Traefik replica dying | **Proven** (attempt 2: one restart, the other replica kept serving) |
 | p95 < 400 ms at 150 req/s with 20k jobs/h running | **Proven** (attempt 2 base phase: p95 49 ms) |

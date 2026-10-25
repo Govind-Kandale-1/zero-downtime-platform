@@ -1,0 +1,11 @@
+# Queue wiring check, 2026-10-25T19:30:32Z (RUN-LOCAL)
+# Scratch namespace: an ExternalSecret over stacks/dev/app with the chart's QUEUE_ADDRESS template,
+# and a KEDA ScaledObject finding dev's Valkey through TriggerAuthentication worker-queue (no hard-coded address).
+secret keys: DATABASE_URL MIGRATION_DATABASE_URL QUEUE_ADDRESS REDIS_URL
+QUEUE_ADDRESS=valkey.app-dev.svc:6379
+ScaledObject Ready=True ScaledObjectReady
+ScaledObject Active=False ScalerNotActive
+ScaledObject Fallback=False NoFallbackFound
+ScaledObject Paused=False 
+ScaledObject HPAActive=True HPAActive
+keda-hpa-dummy   Deployment/dummy   0/5 (avg)   1     2     1     56s

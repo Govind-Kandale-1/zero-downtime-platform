@@ -128,7 +128,7 @@ A peak lasting the whole month is deliberately pessimistic. A 15x event that las
 |---|---|---|
 | Compute Savings Plan / RDS reserved instances (1 year) | roughly −30% on nodes and databases | a commitment; do it after 2–3 months of real usage |
 | Non-prod RDS Single-AZ | −$54.75 per non-prod stack | no failover testing in non-prod |
-| Spot for workers (`workers-spot` NodePool exists) | workers cost less (the AWS spot price was not fetched) | interruptions; safe because of draining + the reaper (ADR-006) |
+| Spot for workers (the AWS stacks ApplicationSet already pins workers to the `workers-spot` pool; this model prices them on demand, so it's conservative) | workers cost less (the AWS spot price was not fetched) | interruptions; safe because of draining + the reaper (ADR-006) |
 | Graviton nodes (`m7g`) | lower price per vCPU (not fetched) | needs an arm64 image: the release builds linux/amd64 only today (buildx can add `--platform linux/arm64`) |
 | **The headroom fix** (ADR-013, third revision): ~30 API pods at peak instead of 21 | +4.5 vCPU at peak, i.e. +1 node: $0.2415/hour while the peak lasts, at most $176.30/month | the cost of not saturating mid-ramp |
 | Prod RDS to `db.r7g.xlarge` (risk 1 in the architecture doc) | about +$425/month (price not fetched; estimated as double `r7g.large`) | only if the real app's query load needs it |

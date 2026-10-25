@@ -1,5 +1,7 @@
 # Runbook: backups stale (`ZdpBackupStale`)
 
+**Label:** RUN-LOCAL: the stuck-job removal and catch-up backup were done exactly this way (evidence 04).
+
 **Trigger:** ticket alert `ZdpBackupStale` for a stack. Either the newest successful hourly backup is older than 2 hours, or the backup CronJob is older than 2 hours and has never succeeded.
 
 **User impact right now:** none. **Risk:** the restore point is getting old. If the database is lost or a migration destroys data, everything since the last good dump is gone. Treat it as urgent before the next deploy: the PreSync hook still takes a dump before every sync, but only for stacks that are deployed.

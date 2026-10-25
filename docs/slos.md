@@ -32,7 +32,7 @@ The availability target comes from `stack.slo`. The latency target is `slo.laten
 | `ZdpTenantErrorBudgetBurnPage` | the same multi-window logic on one shared tenant's router | page | [burn-rate-page](runbooks/burn-rate-page.md) |
 | `ZdpQueueBacklog` | oldest queued job > 300 s (5× the longest job) for 5 min | page | [queue-backlog](runbooks/queue-backlog.md) |
 | `ZdpDbPoolWaiting` (local CNPG only) | a client waited ≥ 1 s for a PgBouncer server connection, sustained for 5 min | ticket | [db-connection-saturation](runbooks/db-connection-saturation.md) |
-| `ZdpBackupStale` | no successful hourly backup for 2 h, or the CronJob is older than 2 h and has never succeeded | ticket | [backup-stale](runbooks/backup-stale.md) |
+| `ZdpBackupStale` (local `pgdump` mode only; on AWS, RDS backups are managed and AWS Backup / EventBridge would alert, DESCRIBED) | no successful hourly backup for 2 h, or the CronJob is older than 2 h and has never succeeded | ticket | [backup-stale](runbooks/backup-stale.md) |
 
 **Why burn rates and not thresholds.** A static "5xx > 1% for 5 min" alert pages on blips that don't threaten the SLO and misses slow burns that do. Two windows give fast detection (the short window) and fast reset after recovery (the long one).
 

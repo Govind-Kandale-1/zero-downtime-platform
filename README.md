@@ -60,7 +60,6 @@ The pipeline builds once, scans, signs, then promotes dev → staging. It waits 
 | `bash infra/live/local/20-data/tests/contract_test.sh` | The provider contract, for every stack |
 | `bash gitops/tests/platform_test.sh` | Platform layer healthy end to end |
 | `bash scripts/tests/gate_test.sh` | Promotion gate behaviour (stubbed cluster) |
-
 | `bash scripts/tests/bump_release_test.sh` | Promotion commits survive concurrent pushes; digests validated |
 | `bash scripts/tests/image_smoke_test.sh` | The image serves, drains on SIGTERM (exit 0 in < 30 s), stays < 25 MB |
 | `bash scripts/restore-test.sh <namespace>` | A fresh backup restores into a scratch database with identical rows (prints the RTO) |
@@ -80,7 +79,7 @@ The pipeline builds once, scans, signs, then promotes dev → staging. It waits 
 | 8. | **Operations**: SLOs 99.9 / 99.95, alerts, per-tenant visibility, runbooks, backups, restore test | Built: edge SLIs, multi-window burn-rate alerts, cause alerts (queue, DB pool, stale backups), per-tenant availability SLIs, 9 runbooks, hourly + pre-deploy backups, a timed restore drill. Per-tenant dashboards are DESCRIBED | RUN-LOCAL (stand-in) | [slos.md](docs/slos.md), [docs/runbooks/](docs/runbooks/), [evidence/04-restore-test](evidence/04-restore-test/README.md), ADR-019/023 |
 | 9. | **Cost and plan**: a steady + peak monthly estimate; a 90-day roadmap | **$2,789 steady / $5,073 peak** (upper bound) on AWS list prices fetched 2026-10-25; up to 8 dedicated tenants within $9k / $16k | DESCRIBED | [cost.md](docs/cost.md) (+ `scripts/fetch-prices.sh`, `docs/cost-prices.csv`), [roadmap.md](docs/roadmap.md) |
 | 10. | **Deliverables**: repo; architecture doc ≤ 5 pages; evidence (deploy under load, auto-rollback, 15x, restore); change-request addendum | Repo, architecture doc and evidence 01–04 are done (15x partial, see row 6). **The change-request addendum is pending**: the request had not been received when this was written | mixed | [architecture.md](docs/architecture.md), `evidence/` |
-| 11. | **Label everything not run** | Every evidence README, code review and doc carries a label; `docs_test.sh` fails if an evidence README has none | — | the labels table above |
+| 11. | **Label everything not run** | Every evidence README, code review, doc and runbook carries a label; `docs_test.sh` fails if an evidence README, a doc or a runbook has none | — | the labels table above |
 
 ## Tested with the stand-in vs the real app
 
@@ -120,5 +119,5 @@ The brief's app is a black box, so a minimal Go stand-in (`app/`, ADR-005) imple
 - [docs/capacity.md](docs/capacity.md), [docs/slos.md](docs/slos.md), [docs/cost.md](docs/cost.md), [docs/non-portable.md](docs/non-portable.md), [docs/roadmap.md](docs/roadmap.md), [docs/runbooks/](docs/runbooks/).
 - `decisions.md`: every decision with rejected alternatives. `questions-answers.md`: review questions and answers, including the uncomfortable ones.
 - `code-review.md` in each folder: what the code there does and why.
-- Root files: `.gitattributes` (LF endings, because the host is Windows), `.gitignore`, `.tflint.hcl` (AWS ruleset), `.trivyignore.yaml` (one accepted finding, with its reason).
+- Root files: `.gitattributes` (LF endings, because the host is Windows), `.gitignore`, `.tflint.hcl` (the `terraform` ruleset, recommended preset; no AWS-specific plugin), `.trivyignore.yaml` (one accepted finding, with its reason).
 - `docs/superpowers/specs/`: the approved design. `docs/superpowers/plans/`: the build plan.

@@ -18,7 +18,7 @@
 
 Every stack's md5 is the same because each stack is seeded with the same 1,000 rows by migration `0001`. The check is still per stack: the counts file comes from that stack's backup, and the restore runs from that stack's volume.
 
-**What the RTO means.** About 80% of it is creating a new Postgres instance. The data part takes 8 s for the stand-in's 1,000 rows. A real database scales with size: a logical restore of tens of GB, plus index builds, takes tens of minutes, and an RDS PITR to a new instance takes 10–30 minutes (ADR-019). One restore uses most of a 99.95% SLO's monthly error budget (21.9 min). That's why a restore is the last resort and fix-forward the default ([rollback-after-migration.md](../../docs/runbooks/rollback-after-migration.md)).
+**What the RTO means.** About 80% of it is creating a new Postgres instance. The data part takes 8 s for the stand-in's 1,000 rows. A real database scales with size: a logical restore of tens of GB, plus index builds, takes tens of minutes, and an RDS PITR to a new instance takes 10–30 minutes (ADR-019). One restore uses most of a 99.95% SLO's 30-day error budget (21.6 min). That's why a restore is the last resort and fix-forward the default ([rollback-after-migration.md](../../docs/runbooks/rollback-after-migration.md)).
 
 **RPO:** at most 1 hour (hourly dumps), or the time since the last deploy, because every Argo CD sync takes a PreSync dump first. On AWS (NOT RUN): about 5 minutes with RDS PITR.
 

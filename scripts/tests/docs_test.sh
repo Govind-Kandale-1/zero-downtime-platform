@@ -5,7 +5,7 @@
 #   - a code-review.md names a file that does not exist
 #   - decisions.md is missing an allocated ADR
 #   - the README coverage table lacks one of the brief's 11 items
-#   - an evidence README has no Label: line
+#   - an evidence README, a doc or a runbook has no Label: line
 #   - a required doc or a runbook an alert links to is missing
 #   - docs/architecture.md exceeds ~5 printed pages (3,000 words)
 #   - LICENSE differs by one byte from the owner's original text
@@ -55,6 +55,11 @@ for n in $(seq 1 11); do grep -qE "^\| *$n\. " README.md || rows+=" $n"; done
 unlabelled=""
 for r in evidence/*/README.md; do grep -qE '(\*\*)?Label:(\*\*)?' "$r" || unlabelled+=" $r"; done
 [ -z "$unlabelled" ] && ok "every evidence README has a Label line" || bad "no Label line in:$unlabelled"
+
+# 5b. So does every top-level doc and every runbook (RUN-LOCAL / DESCRIBED...).
+unlabelled=""
+for r in docs/*.md docs/runbooks/*.md; do grep -qE '^\*\*Labels?:\*\*' "$r" || unlabelled+=" $r"; done
+[ -z "$unlabelled" ] && ok "every doc and runbook has a Label line" || bad "no Label line in:$unlabelled"
 
 # 6. Required docs exist, including every runbook an alert or doc links to.
 need="docs/architecture.md docs/capacity.md docs/cost.md docs/slos.md docs/non-portable.md docs/roadmap.md"

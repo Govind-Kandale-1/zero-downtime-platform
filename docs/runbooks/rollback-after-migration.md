@@ -1,5 +1,7 @@
 # Runbook: rolling back after a migration ran
 
+**Label:** RUN-LOCAL for the expand case (evidence 02); the breaking-migration and restore paths are DESCRIBED.
+
 **When:** you need the previous image back (a canary aborted, or a promoted release misbehaves), and the new image's migration has **already run**. Migrations run at startup, so the canary's first pod applies them before any analysis has judged the release. Rolling back the image does **not** roll back the schema (ADR-018).
 
 ## 1. Classify the migration (5 min)
@@ -42,7 +44,7 @@ The previous image can't run on the new schema, so rolling back turns a partial 
 Use this only if a forward fix is impossible, for example when the migration destroyed data (a dropped column with real content).
 - **Data loss window:** every write since the restore point. Get a written go-ahead from the incident commander first.
 - **Restore point:** the `presync-<timestamp>.dump` on the stack's `pg-backups` volume, taken by the Argo CD PreSync hook seconds before the bad sync. On AWS: RDS point-in-time restore to just before the sync time, shown in Argo CD's sync history.
-- **Rehearse first:** `scripts/restore-test.sh <ns> --latest --keep` restores the newest dump into a scratch cluster `restore-test` and verifies row counts and checksums. That's also how evidence 04 was measured (RTO ≈ 45 s for the stand-in's data).
+- **Rehearse first:** `scripts/restore-test.sh <ns> --latest --keep` restores the newest dump into a scratch cluster `restore-test` and verifies row counts and checksums. That's also how evidence 04 was measured (RTO 34–43 s for the stand-in's data).
 - **Cut over:**
   1. Point the stack's secret at the restored database (`secret/stacks/<stack>/app` in OpenBao: `DATABASE_URL` and `MIGRATION_DATABASE_URL`). External Secrets refreshes `app-env` within its refresh interval.
   2. Restart the pods. `kubectl rollout restart` does not apply to Rollouts, so use `kubectl argo rollouts restart api -n <ns>`. Without the plugin: `kubectl -n <ns> patch rollout api --type merge -p "{\"spec\":{\"restartAt\":\"$(date -u +%FT%TZ)\"}}"`. Do the same for `worker`.

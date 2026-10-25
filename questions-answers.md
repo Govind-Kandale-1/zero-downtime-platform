@@ -25,7 +25,7 @@ Likely review questions, grouped by the brief's sections. Each entry has a short
 **Point to:** `app/code-review.md`, ADR-005.
 
 ### Q: Why Go for the stand-in?
-**A:** Resource budget. About 33 API pods plus about 60 workers have to fit in a ~9.7 GB Docker VM. A Go pod idles at around 15 MB and starts in milliseconds, which also shortens scale-up. The distroless image gives Trivy almost nothing to flag. Python would have been easier to read but would cost about 4× the memory per pod.
+**A:** Resource budget. Up to 21 API pods (calibrated; the design-time estimate was 33) plus up to 60 workers have to fit in a ~9.7 GB Docker VM. A Go pod idles at around 15 MB and starts in milliseconds, which also shortens scale-up. The distroless image gives Trivy almost nothing to flag. Python would have been easier to read but would cost about 4× the memory per pod.
 **Point to:** ADR-005.
 
 ## 1. Cloud-agnostic infrastructure as code
@@ -110,7 +110,7 @@ The same logic is why the Kubernetes backend was rejected: state would live insi
 ### Q: What does CI check on a pull request?
 **A:** Six required jobs:
 - **go-test:** unit tests, plus integration tests against real Postgres and Valkey containers.
-- **chart-test:** 24 render assertions on the one chart, schema validation including CRDs, and promtool parsing the SLO PromQL.
+- **chart-test:** 40 render assertions on the one chart, schema validation including CRDs, and promtool parsing the SLO PromQL.
 - **policy-test:** every tenant file against the onboarding policy, which includes EU residency.
 - **terraform-validate:** every root, local *and* AWS, plus tflint.
 - **iac-scan:** Trivy misconfiguration checks on Terraform, charts and the Dockerfile.
@@ -162,7 +162,7 @@ The cost is that the pipeline can't directly "see" the deployment. My gates read
 **Point to:** ADR-010.
 
 ### Q: Why canary and not blue/green for the API?
-**A:** Blue/green needs a second full fleet during cutover. At peak that's about 40 extra pods, and the cutover is all-or-nothing. It also doesn't protect the database, because both colours share one schema. A canary exposes 10% → 25% → 50% of traffic, checks edge metrics at each step, and aborts automatically. The blast radius of a bad release is about 10–25% of requests for 1–2 minutes, which I measured.
+**A:** Blue/green needs a second full fleet during cutover. At peak that's about 21 extra API pods, and the cutover is all-or-nothing. It also doesn't protect the database, because both colours share one schema. A canary exposes 10% → 25% → 50% of traffic, checks edge metrics at each step, and aborts automatically. The blast radius of a bad release is about 10–25% of requests for 1–2 minutes, which I measured.
 **Follow-ups:** "What exactly triggers the abort?" Two failed 1-minute measurements of canary success rate < 99% or p95 > 400 ms, read from Traefik for the canary Service only. Fewer than 20 requests per minute counts as inconclusive, which pauses the rollout and never passes it.
 **Point to:** ADR-011, `charts/app/templates/analysis-api.yaml`.
 
@@ -182,9 +182,9 @@ The cost is that the pipeline can't directly "see" the deployment. My gates read
 ### Q: How is drift handled?
 **A:** At two layers:
 - **Cluster objects:** Argo CD auto-sync with `selfHeal` and `prune`. Manual changes are reverted, and objects deleted from Git are deleted from the cluster.
-- **Infrastructure** (databases, secrets, cluster): `terraform plan -detailed-exitcode` per root, where exit code 2 means drift. A scheduled job turns that into a GitHub issue.
+- **Infrastructure** (databases, secrets, cluster): `terraform plan -detailed-exitcode` per root, where exit code 2 means drift. Today that is a manual check (the commands are in `docs/runbooks/drift-detected.md`). A nightly workflow that opens an issue is DESCRIBED (roadmap item 8), not built.
 
-Running `plan` after the provider layer was applied returns 0.
+There is no recorded evidence of a clean `plan` run, so this answer claims none.
 **Point to:** ADR-004, ADR-010.
 
 ## 5. Zero downtime
@@ -290,7 +290,7 @@ The analysis also found something the laptop didn't cause. **Reactive scaling ne
 
 ### Q: How does the stand-in model per-pod capacity? Why not burn CPU?
 **A:** Each pod has `MAX_INFLIGHT` slots (8). Each request holds a slot for a slept `WORK_LATENCY_MS` (40 ms) plus a DB lookup, so capacity is about 8 / 0.04 ≈ 100–200 req/s depending on DB time. Beyond that, requests *queue*, so latency rises like a real thread pool, and scaling is genuinely required to keep p95 under 400 ms. Burning CPU instead would tie CPU use to pod count, and the laptop would saturate before the platform did.
-**Follow-ups:** "So the 70 req/s target is invented?" No. It is 70% of the per-pod capacity *measured* with a k6 step test (Task 16).
+**Follow-ups:** "So the per-pod target is invented?" No. It is **126 req/s**, 70% of the per-pod capacity of about 180 req/s *measured* with a k6 step test (Task 16). 70 was the placeholder before calibration.
 **Point to:** `app/internal/httpapi/code-review.md`, ADR-005.
 
 ## 7. Multi-deployment and tenancy
@@ -341,7 +341,7 @@ I page on a 14.4× burn over 1h AND 5m (2% of the month's budget gone in an hour
 ### Q: What are your RPO and RTO?
 **A:** **Locally:**
 - RPO is at most 1 hour (hourly dumps), or less, because every deploy takes a dump first.
-- RTO measured about 40 s (prod 38 s), but that's for 1,000 rows and mostly instance creation. Real data takes tens of minutes.
+- RTO measured 34–43 s (prod 38 s), but that's for 1,000 rows and mostly instance creation. Real data takes tens of minutes.
 
 **On AWS:** RDS PITR gives an RPO of about 5 minutes, and backups are replicated to eu-west-1 so they stay in the EU.
 
@@ -387,6 +387,13 @@ What I wouldn't cut: per-tenant data services for dedicated tenants. That isolat
 - **Pending:** the change-request addendum.
 
 **Point to:** `README.md` (Brief coverage), `evidence/`.
+
+### Q: Did anything broken ever reach `main`?
+**A:** Yes, once. A migration test hard-coded "exactly one migration" and broke when the second migration was added. That change went in as a direct admin push, and CI ran on PRs and dispatch only, so nothing ran the test for a day. A manually dispatched CI run on `main` caught it before the final review. Two fixes:
+- the test now derives its expectations from the embedded migrations;
+- the bigger one, on the roadmap: CI on every push to `main`. "Admins may bypass the ruleset" had quietly meant "admin changes are untested".
+
+**Point to:** ADR-020 (revised), commit `c73cf42`.
 
 ### Q: How do I know a document isn't overclaiming?
 **A:** Three mechanisms. Every evidence README and code review carries a label (RUN-LOCAL, NOT RUN, DESCRIBED). `scripts/tests/docs_test.sh` fails the build if an evidence README has no label, a code review names a file that doesn't exist, or the coverage table is missing an item. And the evidence keeps the failures: three 15x attempts, a first gate attempt that hung for 15 minutes, the backup stall.

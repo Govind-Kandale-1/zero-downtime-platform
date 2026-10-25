@@ -14,7 +14,8 @@ stack:
 # --- app values (charts/app) ---
 # Shared prod stack. Autoscaling target from the measured per-pod capacity
 # (docs/capacity.md): C ~ 180 req/s at p95 < 400 ms, target = 0.7 x C = 126,
-# max = ceil(2250 / 126) + 3 (canary + headroom) = 21. Worker max is a laptop cap.
+# max = ceil(2250 / 126) + 3 (canary + headroom) = 21. Worker max 60: Little's law
+# needs ~56 at 5.56 jobs/s x 10 s (ADR-024); the chart default 120 adds burst room.
 api:
   minReplicas: 3
   maxReplicas: 21

@@ -1,5 +1,7 @@
 # Capacity and autoscaling maths
 
+**Label:** per section: MEASURED (RUN-LOCAL, stand-in), DERIVED (arithmetic from measured or stated inputs) or DESCRIBED.
+
 How the platform reaches **15x (150 → 2,250 req/s) in under 5 minutes without dropping jobs**, and where the limits are.
 
 Labels:
@@ -36,7 +38,7 @@ This matches the stand-in's model: `MAX_INFLIGHT / latency = 8 / ~0.042 s ≈ 19
 
 **Why 70%:** the 30% headroom absorbs the gap between demand rising and new pods becoming Ready (the timeline is in §5). It also absorbs uneven load balancing and an extra canary ReplicaSet during a rollout.
 
-Your original research guessed 3 → 33 pods at an assumed 100 req/s per pod. The measured capacity gives **3 → 18**.
+The design-time estimate was 3 → 33 pods, at an assumed 100 req/s per pod. The measured capacity gives **3 → 18**.
 
 ## 3. Worker capacity (DERIVED; ADR-024)
 
@@ -53,13 +55,13 @@ Little's law: **L = λ × W**. The concurrent jobs in progress, L, equals the ar
 
 - **Sizing uses the mean.** The 60 s maximum decides `terminationGracePeriodSeconds: 90`, so a scale-in never cuts a job short (ADR-006). It doesn't decide the fleet size.
 - **KEDA target:** `listLength: 5` pending jobs per worker, so desired workers = queue depth ÷ 5. A backlog of 280 jobs therefore asks for 56 workers.
-- **Max replicas:** 120 in production, about 2× the mean-duration need, for bursts. On the laptop it is capped at 60 (labelled), at 24 Mi per worker.
+- **Max replicas:** 60 for prod (`gitops/stacks/prod.yaml`, used locally and on AWS): Little's law needs about 56 at the peak rate, so 60 is just enough, with no burst headroom. The chart default of 120 (about 2× the need) applies to stacks that don't set it. At 24 Mi per worker, 60 also fits the laptop.
 
 ## 4. Data-tier limits (DERIVED)
 
 **Postgres connections.**
 - The stand-in uses pgx's default pool (`max(4, NumCPU)`), which is 12 connections per pod on the 12-CPU laptop VM.
-- At the 21-pod maximum: 21 × 12 = **252 client connections** into PgBouncer (`max_client_conn` 1,000), multiplexed onto **40 server connections** (`default_pool_size`), against `max_connections = 200`.
+- At the 21-pod maximum: 21 × 12 = **252 client connections** into PgBouncer (`max_client_conn` 1,000), multiplexed onto at most **40 server connections per PgBouncer instance** (`default_pool_size`; 1 instance locally, 2 on AWS, so 80), against `max_connections = 200`.
 - In production, set the pool explicitly (e.g. `pool_max_conns=10` in `DATABASE_URL`) so the count doesn't depend on node size.
 - Workers hold no DB connections in the stand-in. If the real worker does, budget 2 per worker: 120 × 2 = 240 more client connections, still under PgBouncer's limit.
 
@@ -68,10 +70,10 @@ Little's law: **L = λ × W**. The concurrent jobs in progress, L, equals the ar
 - For the real app, assume about 2 queries per request: **~4,500 queries/s on a single writer**. That's comfortable for simple indexed reads on a 2-vCPU RDS instance with the working set in memory, but it's the **top scaling risk**: writes don't scale out.
 - Mitigations, in order: read replicas (needs app support), connection-level caching, then partitioning by tenant (dedicated tenants already spread load).
 
-**Valkey.** Each job costs about 6 operations (LPUSH + INCR, BLMOVE, LREM + INCR, plus heartbeats and the reaper). At 5.56 jobs/s that's about 35 ops/s, plus KEDA polls every 10 s. A single Valkey node handles more than 100k ops/s, so it isn't a bottleneck.
+**Valkey.** Each job costs about 6 operations (LPUSH + INCR, BLMOVE, LREM + INCR, plus heartbeats and the reaper). At 5.56 jobs/s that's about 35 ops/s, plus one KEDA `LLEN` read per HPA sync (every 15 s). A single Valkey node handles more than 100k ops/s, so it isn't a bottleneck.
 
 **RDS sizing (DESCRIBED).**
-- Shared prod: `db.r7g.large` (2 vCPU, 16 GiB) Multi-AZ. The memory fits a working set of tens of GB of hot data with `shared_buffers` around 4 GB, and 40 pooled server connections stay below vCPU × 4 active backends.
+- Shared prod: `db.r7g.large` (2 vCPU, 16 GiB) Multi-AZ. The memory fits a working set of tens of GB of hot data with `shared_buffers` around 4 GB, PgBouncer holds at most 80 server connections (2 replicas × 40), well below `max_connections`. But only about vCPU × 2–4 = **4–8 queries can actually run at once** on 2 vCPU, so the real limit is query time, not connection count (architecture risk 1).
 - Dedicated tenants: `small` → `db.r7g.large`, `tiny` → `db.t4g.medium` (non-prod only, because burstable CPU credits are a risk under sustained load).
 
 ## 5. Scale-up timeline to 15x (DERIVED; the 15x run measures it)
@@ -80,8 +82,8 @@ Little's law: **L = λ × W**. The concurrent jobs in progress, L, equals the ar
 |---|---|
 | Traefik counts the new traffic, Prometheus scrapes it (15 s interval) | ≤ 15 s |
 | `rate(...[1m])` follows the ramp (it lags by design) | 15–30 s |
-| KEDA polls (`pollingInterval` 10 s) → HPA (15 s sync) | ≤ 25 s |
-| HPA doubles per 15 s, or +8 pods: 3 → 6 → 12 → 18 → 21 | ~45 s |
+| HPA sync (15 s), which queries KEDA's metrics server on demand. KEDA's `pollingInterval` isn't in this path while `minReplicaCount` ≥ 1, as KEDA's own warning says | ≤ 15 s |
+| HPA adds the larger of +100% and +8 pods per 15 s: 3 → 11 → 21 | ~30 s |
 | Pod start: image already on the node, ~15 MB, no migration work | ~5–10 s |
 | **In-cluster total** | **~1.5–2 min** |
 | AWS only: Karpenter launches a node and it joins | +60–90 s, hidden by over-provisioning pods (4.5 vCPU spare) |
@@ -94,7 +96,7 @@ The whole chain fits well inside the 5-minute target, even with the 3-minute ram
 
 ## 6. Nodes on AWS (DESCRIBED)
 
-With the stand-in's requests (API 200m/32 Mi, worker 20m/24 Mi), the whole peak fleet (21 API + 120 workers) needs about 6.6 vCPU and 3.5 GiB. That's two `m7i.xlarge` nodes. (The API request was 50m until evidence 01 showed it made the CPU safety-net trigger fire at about 25 req/s per pod; see section 7.) A real app is heavier. Assuming **0.5 vCPU / 512 Mi per API pod at C**, the sizing works out as follows:
+With the stand-in's requests (API 200m/32 Mi, worker 20m/24 Mi), the whole peak fleet (21 API + 60 workers) needs about 5.4 vCPU and 2.1 GiB. That's two `m7i.xlarge` nodes. (The API request was 50m until evidence 01 showed it made the CPU safety-net trigger fire at about 25 req/s per pod; see ADR-013, revised.) A real app is heavier. Assuming **0.5 vCPU / 512 Mi per API pod at C**, the sizing works out as follows:
 
 | Load | API pods | API vCPU | Workers (0.1 vCPU each) | Nodes (`m7i.xlarge`, 4 vCPU, 80% usable) |
 |---|---|---|---|---|

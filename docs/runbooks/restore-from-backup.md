@@ -1,8 +1,10 @@
 # Runbook: restore a stack's database from backup
 
+**Label:** DESCRIBED. The rehearsal step (`scripts/restore-test.sh`) is RUN-LOCAL (evidence 04); an in-place restore was not exercised.
+
 **When:** data is lost or corrupted (a destructive migration, a bad manual change, a broken volume) **and** a forward fix can't recover it. This is the last resort ([rollback-after-migration.md](rollback-after-migration.md), §2c). **It loses every write since the restore point** and needs the incident commander's written go-ahead.
 
-**Rehearse first, every time:** `scripts/restore-test.sh <ns> --latest` proves the dump restores and shows the timing (evidence 04: about 40 s for the stand-in's data). Real data takes longer: plan on tens of minutes for tens of GB.
+**Rehearse first, every time:** `scripts/restore-test.sh <ns> --latest` proves the dump restores and shows the timing (evidence 04: 34–43 s for the stand-in's data). Real data takes longer: plan on tens of minutes for tens of GB.
 
 ## 1. Choose the restore point
 
@@ -10,7 +12,7 @@
 |---|---|---|
 | **PreSync dump** of the bad deploy | `presync-<ts>.dump` on the stack's `pg-backups` volume, taken seconds before the sync | everything written after that sync |
 | Latest **hourly** dump | `backup-<ts>.dump` | up to 1 hour |
-| **AWS:** RDS point-in-time | any second in the last 14 days, also from the eu-west-1 replica | from the chosen second onwards |
+| **AWS:** RDS point-in-time | any second in the last 14 days in eu-central-1, or the last 7 days from the eu-west-1 replica | from the chosen second onwards |
 
 ```bash
 ns=tenant-acme

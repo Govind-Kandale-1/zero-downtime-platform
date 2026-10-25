@@ -1,5 +1,7 @@
 # Runbook: tenant onboarding failed
 
+**Label:** DESCRIBED (a procedure, not exercised end to end).
+
 **How onboarding works** (`tenants/code-review.md`): one reviewed PR adds `tenants/<name>.yaml`.
 - **Shared** tier: Argo CD's `tenants-shared` ApplicationSet renders a host route and per-tenant SLO rules on the prod stack.
 - **Dedicated** tier: Terraform `20-data` creates the tenant's namespace, Postgres + PgBouncer, Valkey and secret. Then the `tenants-dedicated` ApplicationSet creates `stack-<name>` at its ring's release.

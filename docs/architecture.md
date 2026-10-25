@@ -72,7 +72,7 @@ ASCII fallback:
 **Request and job path.**
 - **Requests:** Traefik → weighted `TraefikService` → `api-stable` / `api-canary` → API → PgBouncer → Postgres.
 - **Jobs:** `POST /api/jobs` → Valkey list. Workers claim jobs with `BLMOVE` into a per-worker processing list and heartbeat while they work. A reaper requeues the jobs of dead workers. Delivery is at-least-once (ADR-006).
-- **Shutdown:** SIGTERM → readiness fails → preStop sleep → drain. API grace is 30 s; workers get 90 s, more than the 60 s maximum job.
+- **Shutdown:** the pod is marked Terminating and removal from endpoints begins → the kubelet runs the preStop sleep (5 s, so Traefik stops routing first) → SIGTERM → the app fails `/readyz` and drains in-flight work → exit. API grace is 30 s; workers get 90 s, more than the 60 s maximum job.
 
 **Scaling** (ADR-013). The API scales on the **maximum** of three triggers:
 - edge req/s per pod (target 126 in prod = 70% of the measured capacity of ~180), for steady state;
@@ -100,7 +100,7 @@ The worker scales on Valkey list length. Evidence 03 explains why in-flight was 
 
 | Risk | Impact | Mitigation now | Next step |
 |---|---|---|---|
-| **A single Postgres writer at 15x** (~2 queries/request → ~4,500 queries/s) | Writes don't scale out; the database becomes the ceiling | PgBouncer transaction pooling (40 server connections); RDS `r7g.large` Multi-AZ; pool-wait metrics now scraped (evidence 01) | Load-test the real app's query mix; read replicas for reads; `r7g.xlarge` headroom; cache hot reads in Valkey |
+| **A single Postgres writer at 15x** (~2 queries/request → ~4,500 queries/s) | Writes don't scale out; the database becomes the ceiling | PgBouncer transaction pooling (40 server connections per instance); RDS `r7g.large` Multi-AZ; pool-wait metrics now scraped (evidence 01) | Load-test the real app's query mix; read replicas for reads; `r7g.xlarge` headroom; cache hot reads in Valkey |
 | **A breaking migration ships despite the policy** | The stable version fails on the new schema; image rollback makes it worse | PreSync dump before every sync; [rollback-after-migration runbook](runbooks/rollback-after-migration.md); fix-forward | CI check that classifies migration SQL (DROP/RENAME/NOT NULL without default) and requires a two-release plan |
 | **The black-box worker doesn't drain on SIGTERM** | Jobs killed mid-run, then duplicated by the reaper | 90 s grace (> 60 s max job); at-least-once queue with heartbeats and a reaper; the stand-in proves the contract | Confirm SIGTERM handling and idempotency with the app team; `preStop` hook to stop claiming |
 | **Laptop evidence isn't representative** | Capacity and timing numbers may not transfer to AWS | Every result labelled; the 15x attempts and their limits reported as found (evidence 03); AWS sizing derived in `capacity.md` | First AWS apply, then the 15x test from a load generator outside the cluster; apply the headroom fix |

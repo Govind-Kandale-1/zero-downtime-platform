@@ -105,6 +105,13 @@ Date · Status · Label
 - A solo owner cannot approve their own PR, so "reviewed change" means checks plus an admin merge. This limitation is documented.
 - Keyless signing records the repo identity in the public Rekor log, which is acceptable for a public repo.
 
+**Revised 2026-10-26: the admin bypass also bypassed CI.**
+- A test (`TestMigrateIsIdempotentAndLocked`) failed on `main` for a day without anyone noticing. Migration `0002` was added in a direct admin push, and CI runs on PRs and dispatch, not on push.
+- A manually dispatched CI run on `main` caught it. The test now derives its expectations from the embedded migrations.
+- **The lesson:** "admins may bypass" quietly meant "admin changes are untested".
+- **The fix** (roadmap): run CI on `push` to `main` as well, using `concurrency` to avoid double runs on PRs, or remove the admin bypass once there is a second reviewer.
+- `release.yml` now ignores `*_test.go`, so a test-only fix doesn't start a release.
+
 ## ADR-021: Toolchain runs in pinned containers on the Windows host
 
 2026-10-25 · Accepted · Label: RUN-LOCAL
@@ -140,11 +147,11 @@ Date · Status · Label
 
 2026-10-25 · Accepted · Label: RUN-LOCAL (stand-in)
 
-**Context.** The brief treats the application as a black box ("do not rewrite") but supplies no image. Something has to run so the platform can be exercised, and the 15x load test (about 33 API pods and about 60 workers) has to fit in a ~9.7 GB Docker VM on a laptop.
+**Context.** The brief treats the application as a black box ("do not rewrite") but supplies no image. Something has to run so the platform can be exercised, and the 15x load test (estimated then at about 33 API pods and 60 workers; calibrated later to at most 21 API pods, `docs/capacity.md`) has to fit in a ~9.7 GB Docker VM on a laptop.
 
 **Decision.**
 - **Contract only.** A small Go module with one image and three binaries (`/api`, `/worker`, `/synthetic`). It implements only the black-box contract, plus two stand-in-only knobs.
-- **Capacity model.** `MAX_INFLIGHT` (8) is a queueing semaphore and `WORK_LATENCY_MS` (40) is a slept per-request delay. Together they give each pod a finite capacity (≈ `MAX_INFLIGHT / latency`, ~100 req/s), so overload shows up as rising latency, as with a real thread pool.
+- **Capacity model.** `MAX_INFLIGHT` (8) is a queueing semaphore and `WORK_LATENCY_MS` (40) is a slept per-request delay. Together they give each pod a finite capacity (≈ `MAX_INFLIGHT / latency`; estimated at ~100 req/s, measured at ~180 req/s in Task 16), so overload shows up as rising latency, as with a real thread pool.
 - **Fault injection.** `FAULT_ERROR_RATE` is a compiled-in default with an env override, used by the bad-release demo.
 
 **Rejected alternatives.**
@@ -206,7 +213,7 @@ Date · Status · Label
 
 2026-10-25 · Accepted · Label: RUN-LOCAL (local) / NOT RUN (AWS RDS)
 
-**Context.** At 15x the platform runs about 40 API pods and up to about 120 workers. With a 10-connection pool per API pod and 2 per worker, that is roughly **640 client connections**, while a Postgres primary performs best with a few dozen active backends. Separately, the black box runs migrations at startup, and safe concurrent migrations need a **session-level advisory lock**.
+**Context.** At 15x the platform runs about 40 API pods and up to about 120 workers (design-time estimate; calibrated: at most 21 API pods × 12 connections = 252, plus workers). With a 10-connection pool per API pod and 2 per worker, that is roughly **640 client connections**, while a Postgres primary performs best with a few dozen active backends. Separately, the black box runs migrations at startup, and safe concurrent migrations need a **session-level advisory lock**.
 
 **Decision.**
 - **Pooling.** Every stack gets PgBouncer in **transaction mode** (`max_client_conn=1000`, `default_pool_size=40`). Runtime traffic uses `DATABASE_URL` → PgBouncer.
@@ -330,7 +337,7 @@ Date · Status · Label
 - **Automatic rollback.** Two failed measurements abort the rollout: 100% of traffic returns to stable within one reconcile, and the canary scales down.
 
 **Rejected alternatives.**
-- *Blue/green:* needs two full fleets during cutover. At 2,250 req/s that is about 40 extra pods. It also gives no protection against schema changes, because both colours share one database, and the cutover is all-or-nothing.
+- *Blue/green:* needs two full fleets during cutover. At 2,250 req/s that is about 21 extra API pods (calibrated; estimated at 40 when this was decided). It also gives no protection against schema changes, because both colours share one database, and the cutover is all-or-nothing.
 - *Plain rolling update:* has no traffic control and no metric gate. A bad version reaches 100% as fast as pods turn Ready, and "Ready" says nothing about error rate.
 - *Gating on the app's own metrics:* the black box's metric names are unknown. Edge metrics are uniform for every app behind the ingress.
 
@@ -372,7 +379,7 @@ Date · Status · Label
   - Scale-up: no stabilization; each 15 s, add the larger of +100% or +8 pods.
   - Scale-down: a 300 s stabilization window, then at most −20% per minute.
 - **Worker.** A KEDA Redis-list trigger on `LLEN jobs` with a target of 5 pending jobs per worker. The same scale-down damping applies; scale-in is safe because of draining plus the reaper.
-- **Bounds.** Min 3 API pods (HA); max 40 API and 120 worker pods (capacity maths).
+- **Bounds.** Min 3 API pods (HA); the chart default maximum is 40 API and 120 worker pods. Prod sets 21 API (calibrated: 2,250 / 126 + headroom) and 60 workers (`gitops/stacks/prod.yaml`).
 
 **Rejected alternatives.**
 - *CPU-only HPA:* I/O-bound pods saturate on concurrency long before CPU. By the time CPU rises, latency has already blown the SLO. The signal lags the cause.
@@ -380,7 +387,7 @@ Date · Status · Label
 - *Fixed peak capacity:* about 40 pods, around the clock, for traffic that is 15x below peak most of the time.
 
 **Consequences.**
-- Scale-up to 15x takes about 10 s (poll) + 15 s (HPA) per doubling, plus pod start. That's roughly 1.5 minutes in-cluster. On AWS, Karpenter node provisioning adds about 60–90 s, absorbed by over-provisioning pods.
+- Scale-up to 15x takes about 15 s (HPA sync) per step of +100% or +8 pods (3 → 11 → 21), plus pod start; KEDA's poll isn't in the path while `minReplicaCount` ≥ 1. That's roughly 1.5 minutes in-cluster. On AWS, Karpenter node provisioning adds about 60–90 s, absorbed by over-provisioning pods.
 - `spec.replicas` is left out of the Rollouts so Argo CD and KEDA don't fight over it.
 
 **Revised 2026-10-25 (evidence 01): the CPU safety net fired first.** Under 150 req/s of steady load the HPA went from 3 to 14 API pods in 30 s, with the reason "cpu resource utilization above target". It then sat at 14–15 pods running at about 7% of their capacity. The cause was the CPU request, not the trigger design: the request was 50m and the trigger 70% of it, i.e. 35m. The stand-in uses about **1.4 millicores per req/s** (measured: total API CPU against total edge RPS at 20 and 170 req/s, with no meaningful fixed cost per pod). So CPU crossed its threshold at about 25 req/s per pod, five times below the RPS target of 126. The rule now:
@@ -394,11 +401,13 @@ Date · Status · Label
 - The HPA takes the **maximum** across triggers: RPS sizes the steady state, in-flight reacts to saturation, and CPU is the safety net.
 - **Assumption for the real app:** it exposes an active-requests gauge, such as OpenTelemetry's `http.server.active_requests` (`api.inflightMetric`). If it doesn't, the fallback is Traefik's entrypoint `open_connections`, which is shared across stacks and inflated by idle keep-alives. This is in the open questions.
 
+**Revised 2026-10-26 (independent review): the worker scaler finds the queue through the contract.** It had a hard-coded `valkey.<ns>.svc:6379`, which exists only locally; on AWS the worker would never have scaled. The ExternalSecret now derives `QUEUE_ADDRESS` from `REDIS_URL`, and KEDA reads it through a TriggerAuthentication, with `queue.tls` for ElastiCache. Verified on the live cluster (`evidence/00-bringup/queue-wiring-check.txt`).
+
 **Revised a third time 2026-10-25 (evidence 03, attempts 2–3): size the target for the ramp, not only for steady state. Designed, not applied.**
-- Reactive scaling only keeps up if the spare capacity covers **ramp slope × reaction time**. The reaction time is about 60 s here: the 1-minute rate window lags a ramp by about 30 s, then scrape, KEDA poll, HPA sync and pod start.
+- Reactive scaling only keeps up if the spare capacity covers **ramp slope × reaction time**. The reaction time is about 60 s here: the 1-minute rate window lags a ramp by about 30 s, then scrape, HPA sync and pod start (KEDA's poll isn't in the path while `minReplicaCount` ≥ 1).
 - The brief's ramp (2,100 req/s in 3 min, 11.7 req/s per second) needs about 700 req/s of headroom. 3 pods at 70% of C leave about 390. So the current targets **saturate briefly during the ramp on any infrastructure**.
 - On a real cluster the in-flight trigger recovers that in about 30 s, as a latency bump (attempt 2 showed it reacting 4 → 12 → 21). On the laptop, saturation starves the shared VM and collapses the cluster (attempts 2 and 3).
-- **The fix:** a `rate(...[30s])` window, 5 s scrape and poll for the scaling metrics, `rpsPerPod` ≈ 80 (about 45–50% of C), `inflightPerPod` 3.5, and KEDA `cron` pre-scaling for peaks known in advance.
+- **The fix:** a `rate(...[30s])` window and a 5 s scrape for the scaling metrics (KEDA's poll doesn't matter while `minReplicaCount` ≥ 1), `rpsPerPod` ≈ 80 (about 45–50% of C), `inflightPerPod` 3.5, and KEDA `cron` pre-scaling for peaks known in advance.
 - **Cost:** about 30 API pods at peak instead of about 21, i.e. about 4.5 more vCPU while the peak lasts.
 - **Not applied:** the owner chose to stop load testing at the analysis stage. It's the first item on the roadmap.
 
@@ -455,7 +464,7 @@ Date · Status · Label
 
 **Consequences.**
 - **RPO, local:** at most 1 hour, or the time since the last deploy if that's shorter. **RPO, AWS:** about 5 minutes (PITR).
-- **RTO measured locally: about 45 s**, mostly creating the new instance (evidence 04). That's for the stand-in's 1,000 rows. Real RTO scales with data size: a logical restore of tens of GB, plus index builds, takes tens of minutes, and an RDS PITR to a new instance takes 10–30 minutes. One restore uses most of a 99.95% SLO's monthly error budget (21.9 min). That's why restore is the last resort and fix-forward the default (ADR-018).
+- **RTO measured locally: 34–43 s** (prod 38 s), mostly creating the new instance (evidence 04). That's for the stand-in's 1,000 rows. Real RTO scales with data size: a logical restore of tens of GB, plus index builds, takes tens of minutes, and an RDS PITR to a new instance takes 10–30 minutes. One restore uses most of a 99.95% SLO's 30-day error budget (21.6 min). That's why restore is the last resort and fix-forward the default (ADR-018).
 - **Same failure domain, locally:** the dumps live on the same laptop disk as the database. On AWS the backups are in a separate service, and **cross-region replicas stay inside the EU**: `aws_db_instance_automated_backups_replication` copies each RDS instance's automated backups (PITR) to `eu-west-1` under a CMK in that region (`infra/modules/aws/stack-data`, NOT RUN).
 - **Known gap:** `.counts` is computed in a separate transaction just after the dump. With concurrent writes it can differ from the dump's snapshot. The stand-in's `items` table is read-only, so this holds today. For the real app: `pg_dump --snapshot` on an exported snapshot, and the counts taken inside that same snapshot.
 - The drill runs by hand today. **Scheduling it weekly** (a CronJob or a CI job, alerting on `RESTORE FAIL`) is on the roadmap.
@@ -515,6 +524,8 @@ Date · Status · Label
 **Consequences.**
 - Dedicated tenants share the Kubernetes control plane and ingress with others in the region, so a cluster-level incident affects them all. The 99.95% target relies on Multi-AZ data services, PDBs, topology spread and ring-ordered rollouts.
 - Cost per dedicated tenant is mostly its database and cache (see `docs/cost.md`).
+
+**Revised 2026-10-26 (independent review): the tenant node pool is now wired.** The pool was a hand-written example (`tenant-acme`), and no app pod could land on it because the chart set no tolerations or nodeSelector. Now `charts/app` renders `NodePool tenant-<name>` when `nodePool.enabled` (set for every dedicated tenant by the AWS ApplicationSet), and pins the tenant's api and worker pods to it. On AWS, onboarding stays one tenant file. Workers of the env stacks go to the spot pool the same way. NOT RUN; render-tested.
 
 ## ADR-014: Supply chain: GHCR, Trivy, keyless Cosign with SBOM attestation, and the chart promoted as an OCI artifact
 

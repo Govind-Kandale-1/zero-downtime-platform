@@ -1,5 +1,7 @@
 # Runbook: drift detected
 
+**Label:** DESCRIBED. Part A's fixes were applied for real during the build (Tasks 14 and 16); part B is a manual check until roadmap item 8.
+
 Drift is live state that no longer matches Git. There are two layers, with different tools.
 
 ## A. Kubernetes drift: an Argo CD Application is `OutOfSync`

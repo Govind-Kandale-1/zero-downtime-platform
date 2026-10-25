@@ -1,5 +1,7 @@
 # Runbook: error budget burning (`ZdpErrorBudgetBurnPage` / `Ticket` / `ZdpTenantErrorBudgetBurnPage`)
 
+**Label:** DESCRIBED (a procedure, not exercised end to end; the queries run against the local Prometheus).
+
 **Trigger:**
 - **Page:** a stack (or one shared tenant) is spending its error budget at ≥ 14.4× over 1 h and 5 min, or ≥ 6× over 6 h and 30 min.
 - **Ticket:** ≥ 1× over 3 days.

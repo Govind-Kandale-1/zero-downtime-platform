@@ -1,5 +1,7 @@
 # Runbook: canary aborted
 
+**Label:** RUN-LOCAL for detection and diagnosis (a real abort: evidence 02); the retry path is DESCRIBED.
+
 **Trigger:** a release run's gate fails with `GATE FAIL <stage>/<stack>: rollout/api aborted` (or `rollout/worker`). In Argo CD the stack shows **Degraded**, and the Rollout has a `RolloutAborted` event.
 
 **User impact right now:** usually none left. Argo Rollouts has already put 100% of traffic back on stable and scaled the canary down. The blast radius was the canary weight for the length of the analysis: 10% for about 2 minutes, in evidence 02. Later stages and rings were skipped, because each needs the previous gate.

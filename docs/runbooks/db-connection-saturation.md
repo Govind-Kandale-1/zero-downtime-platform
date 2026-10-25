@@ -1,5 +1,7 @@
 # Runbook: database connection saturation (`ZdpDbPoolWaiting`)
 
+**Label:** DESCRIBED (a procedure, not exercised end to end; the metric names exist in the local Prometheus).
+
 **Trigger:** ticket. A client waited ≥ 1 s for a PgBouncer server connection, sustained for 5 minutes. Local stacks only, from the CNPG exporters. On AWS use RDS Performance Insights and CloudWatch `DatabaseConnections`.
 
 **User impact:** requests slow down. If it's bad enough, the latency burn-rate alert pages too.
