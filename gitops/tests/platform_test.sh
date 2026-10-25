@@ -5,7 +5,8 @@
 set -euo pipefail
 # shellcheck source=scripts/lib/tools.sh
 . "$(git rev-parse --show-toplevel)/scripts/lib/tools.sh"
-export KUBECONFIG="$(repo_root)/.local/kubeconfig"
+KUBECONFIG="$(repo_root)/.local/kubeconfig"
+export KUBECONFIG
 fails=0
 pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*"; fails=$((fails + 1)); }

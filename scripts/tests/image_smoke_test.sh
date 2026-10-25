@@ -30,7 +30,7 @@ docker run -d --name zdp-smoke-pg --network "$NET" -e POSTGRES_USER=app -e POSTG
   -e POSTGRES_DB=app "$POSTGRES_IMAGE" >/dev/null
 docker run -d --name zdp-smoke-valkey --network "$NET" "$VALKEY_IMAGE" >/dev/null
 
-DB=postgres://app:app@zdp-smoke-pg:5432/app?sslmode=disable
+DB="postgres://app:app@zdp-smoke-pg:5432/app?sslmode=disable"
 docker run -d --name zdp-smoke-api --network "$NET" -p "127.0.0.1:${PORT}:8080" \
   -e DATABASE_URL="$DB" -e REDIS_URL=redis://zdp-smoke-valkey:6379/0 "$IMG" >/dev/null
 

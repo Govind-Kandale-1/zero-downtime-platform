@@ -1,0 +1,5 @@
+# Changes to tenants and release pins need an owner review (enforced by the
+# main ruleset). Release pins are normally written by the pipeline (deploy key).
+/tenants/          @Govind-Kandale-1
+/gitops/releases/  @Govind-Kandale-1
+/policy/           @Govind-Kandale-1
