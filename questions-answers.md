@@ -315,18 +315,118 @@ The analysis also found something the laptop didn't cause. **Reactive scaling ne
 ## 8. Operations
 
 ### Q: Explain your SLO alerting.
-**A:** I use two SLIs per stack, both measured at the edge: availability (non-5xx share) and latency (share of requests within ≤ 400 ms). The error budget is 0.1% for shared and 0.05% for dedicated: 43 and 22 minutes a month. I page on a 14.4× burn over 1h AND 5m (2% of the month's budget gone in an hour), or 6× over 6h AND 30m. A 1× burn over 3 days opens a ticket. Requiring both windows makes the page fire quickly and clear quickly once the problem is fixed.
+**A:** I use two SLIs per stack, both measured at the edge: availability (non-5xx share) and latency (share of requests within 400 ms).
+- **Availability budget:** 0.1% for shared and 0.05% for dedicated, i.e. 43 and 22 minutes a month.
+- **Latency target:** 95% of requests within 400 ms, which is the brief's p95.
+
+I page on a 14.4× burn over 1h AND 5m (2% of the month's budget gone in an hour), or 6× over 6h AND 30m. A 1× burn over 3 days opens a ticket. Requiring both windows makes the page fire quickly and clear quickly once the problem is fixed.
 **Follow-ups:**
 - "Why not 'error rate > 1%'?" A static threshold isn't tied to the budget. It pages on blips that don't matter and misses slow burns that do.
 - "Per-tenant?" Every rule is labelled with stack and tier, and shared tenants get per-host router metrics.
+- "Was latency always 95%?" No. The first version reused the availability objective, which in effect meant p99.9 < 400 ms. I caught it while writing `docs/slos.md` and gave latency its own objective.
 
-**Point to:** ADR-023, `charts/app/templates/prometheusrule-slo.yaml`.
+**Point to:** ADR-023 (revised), `docs/slos.md`.
+
+### Q: What pages someone, and what only opens a ticket?
+**A:** Pages are for things users feel now or will very soon: a fast error-budget burn, and a job queue backlog over 5 minutes. Tickets are for slow burns and causes that haven't hurt anyone yet: a 3-day budget burn, PgBouncer waits, stale backups. Cause alerts deliberately aren't budget-based. They point at the broken part early, and if users notice, a burn-rate alert pages anyway.
+**Point to:** `docs/slos.md` (alert table), `docs/runbooks/`.
+
+### Q: How would you know your backups had silently stopped?
+**A:** It happened here, which is how I know the answer. A tenant backup job was stuck Pending; with `concurrencyPolicy: Forbid` and no deadline, every later hourly run was skipped for 3 hours. Prometheus had no "last successful backup" series at all, because the job had never succeeded. So a plain staleness alert would have stayed silent too. The fixes:
+- a deadline on the jobs, so a hung job fails instead of blocking;
+- `ZdpBackupStale`, which also fires when the CronJob is older than 2 hours and has **never** succeeded.
+
+**Point to:** `evidence/04-restore-test/README.md`, `docs/runbooks/backup-stale.md`.
+
+### Q: What are your RPO and RTO?
+**A:** **Locally:**
+- RPO is at most 1 hour (hourly dumps), or less, because every deploy takes a dump first.
+- RTO measured about 40 s (prod 38 s), but that's for 1,000 rows and mostly instance creation. Real data takes tens of minutes.
+
+**On AWS:** RDS PITR gives an RPO of about 5 minutes, and backups are replicated to eu-west-1 so they stay in the EU.
+
+A restore burns most of a 99.95% month's budget, which is why the policy is fix-forward first.
+**Point to:** ADR-019, `docs/runbooks/restore-from-backup.md`.
 
 ## 9. Cost and plan
-*(added in later steps)*
+
+### Q: What does this cost?
+**A:** On AWS list prices fetched on 2026-10-25:
+- **Steady:** about **$2,789/month** for shared prod, dev, staging and one dedicated tenant.
+- **Peak:** about **$5,073**. That's an upper bound that assumes peak traffic all month.
+
+The biggest lines are per-stack Multi-AZ databases and caches (about $664 per production-size stack) and, at peak, internet egress (about $1,000 at 2 KB per response). Every price has its source URL in `docs/cost-prices.csv`, and `scripts/fetch-prices.sh` refreshes them.
+**Follow-ups:** "Why so far under budget?" The budget sets a ceiling for tenants. 8 dedicated tenants fit within $9k steady and $16k peak, and each one costs about $840/month, mostly its own database.
+**Point to:** `docs/cost.md`.
+
+### Q: How would you cut cost without cutting reliability?
+**A:**
+- A Compute Savings Plan and RDS reservations after 2–3 months of real usage (about −30% on the largest lines).
+- Single-AZ databases for non-prod (−$55 each).
+- Spot nodes for workers, which is safe because workers drain and the reaper requeues.
+- Measuring the real response size, since egress dominates at peak.
+
+What I wouldn't cut: per-tenant data services for dedicated tenants. That isolation is what they pay for.
+**Point to:** `docs/cost.md` ("What moves the number").
+
+### Q: What's in your 90 days, and why that order?
+**A:** Risk order:
+1. **Days 1–30: prove it for real.** The first AWS apply, the headroom fix, the 15x test on EKS with an external load generator, and confirming the black-box assumptions with the app team.
+2. **Days 31–60: automate the last manual steps.** Tenant apply with timed onboarding, a nightly Terraform drift check, a scheduled restore drill, and a CI check for breaking migrations.
+3. **Days 61–90: scale out.** The change request on a second provider, a second region, database scaling, and game days.
+
+**Point to:** `docs/roadmap.md`.
 
 ## 10. Deliverables and evidence
-*(added in later steps)*
+
+### Q: Which of the brief's items are actually proven?
+**A:** The README's coverage table answers this item by item, with a label and an evidence link for each.
+- **Proven on the local platform:** build-once/sign/promote with metric gates; canary with automatic rollback (evidence 02); a deploy under steady load with zero failed requests (evidence 01); a timed restore (evidence 04); no jobs lost under overload.
+- **Partially proven:** 15x (evidence 03).
+- **Described only:** the AWS deployment, onboarding timing, Kyverno and the drift workflow.
+- **Pending:** the change-request addendum.
+
+**Point to:** `README.md` (Brief coverage), `evidence/`.
+
+### Q: How do I know a document isn't overclaiming?
+**A:** Three mechanisms. Every evidence README and code review carries a label (RUN-LOCAL, NOT RUN, DESCRIBED). `scripts/tests/docs_test.sh` fails the build if an evidence README has no label, a code review names a file that doesn't exist, or the coverage table is missing an item. And the evidence keeps the failures: three 15x attempts, a first gate attempt that hung for 15 minutes, the backup stall.
+**Point to:** `scripts/tests/docs_test.sh`, `evidence/03-load-15x/README.md`.
 
 ## 11. Uncomfortable questions
-*(added in later steps; see spec §14 for the list)*
+
+### Q: Why should I trust numbers from a laptop?
+**A:** You should trust the *mechanisms*, not the absolute numbers, and the evidence is written that way:
+- **Transfers to any infrastructure:** the gates, canary aborts, and job accounting (enqueued = done in every test).
+- **Laptop-specific:** capacity per pod (C ≈ 180 req/s) and CPU per request belong to the stand-in on this laptop.
+- **Where it broke:** the 15x test hit the laptop's ceiling of about 650–800 req/s, and the README says so instead of quoting a number that doesn't exist.
+
+The AWS sizing is derived from stated assumptions (0.5 vCPU per real API pod). The first roadmap item is re-running the 15x test on EKS with the load generator outside the cluster.
+**Point to:** `evidence/03-load-15x/README.md` ("What this evidence proves"), `docs/capacity.md`.
+
+### Q: A single Postgres writer at 15x. Isn't that your ceiling?
+**A:** Yes, it's risk 1 in the architecture doc. At about 2 queries per request, 2,250 req/s is about 4,500 queries/s on one writer.
+- **What helps today:** PgBouncer transaction pooling keeps server connections at 40, and simple indexed reads with a hot working set are comfortable on an `r7g.large`. Pool-wait metrics and an alert now show saturation before users do.
+- **What helps next:** measure the real app's query mix at 15x. Then add read replicas for reads, move to `r7g.xlarge` (about +$425/month), and cache hot reads in Valkey.
+- **What doesn't scale out:** writes. If the real workload is write-heavy, that's a conversation about the app's data model, not the platform.
+
+**Point to:** `docs/architecture.md` §6, `docs/capacity.md` §4, `docs/runbooks/db-connection-saturation.md`.
+
+### Q: What if the real app doesn't drain on SIGTERM?
+**A:** Short version: the preStop sleep, the readiness flip and the 30 s / 90 s grace periods cover a well-behaved app. For one that ignores SIGTERM, in-flight API requests are cut at SIGKILL, and the queue's heartbeat + reaper requeue unfinished jobs. That's at-least-once, so jobs must be idempotent: an open question for the app team.
+**Point to:** section 5, "What if the real black-box app doesn't drain on SIGTERM?"
+
+### Q: How do you roll back after a breaking migration?
+**A:** You mostly don't roll back the image. After an *expand* migration, rolling the image back is safe (evidence 02). After a *breaking* one, the old image can't run, so you fix forward with a compatibility release. Restore is the last resort and accepts data loss.
+**Point to:** section 5, "You rolled back the image, but the migration already ran", and `docs/runbooks/rollback-after-migration.md`.
+
+### Q: Why not blue/green?
+**A:** It doubles capacity during every deploy and switches 100% of traffic at once, with no gradual signal. Worse, a migration hits the shared database for every user before the switch. A canary exposes 10% first and judges it on real edge metrics (evidence 02: 2 minutes at 10% of dev traffic, then an automatic abort).
+**Point to:** section 4, "Why canary and not blue/green for the API?"
+
+### Q: Why a self-hosted runner, on a public repo?
+**A:** It only runs the *read-only* gate. It needs to reach the local cluster's Prometheus and Argo CD, which GitHub-hosted runners can't. It holds a read-only kubeconfig, and only runs jobs from workflows on `main` behind the ruleset, not fork PRs.
+**Point to:** section 3, "Why a self-hosted runner?"
+
+### Q: What happens when GitHub is down?
+**A:** Running workloads are unaffected: images are pinned by digest and already on the nodes, and Argo CD keeps reconciling the last commit it saw. Releases stop. Break-glass is a reviewed commit to the release file once Git is reachable. The roadmap adds an ECR pull-through cache, so new nodes can still pull.
+**Point to:** section 3, "What happens when GitHub is down?"

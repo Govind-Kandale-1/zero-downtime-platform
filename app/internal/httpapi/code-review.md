@@ -15,3 +15,5 @@
 **Verify:** `bash scripts/test-go.sh unit` (12 tests in this package).
 
 **Label:** RUN-LOCAL (stand-in).
+
+**Tests:** `server_test.go` covers `/healthz` (always 200), `/readyz` (503 once shutdown starts), item lookup and 404, fault rate 0 and 1, job validation (rejects > 60 s) and enqueue, `/version`, and the 0.4 s latency bucket that the SLOs depend on. `limiter_test.go` checks that requests beyond `MAX_INFLIGHT` wait rather than fail, and that a cancelled request releases its slot.

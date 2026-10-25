@@ -21,3 +21,5 @@
 - `bash scripts/test-go.sh integration`: the Valkey lifecycle.
 
 **Label:** RUN-LOCAL (stand-in).
+
+**Tests:** `enqueue_test.go` checks that `Enqueue` LPUSHes the job and increments `jobs:enqueued_total`. The claim, heartbeat and reaper paths are covered by the integration tests against real Valkey (`scripts/test-go.sh integration`).

@@ -12,3 +12,5 @@ Wraps `terraform-aws-modules/vpc` 6.7.3 (ADR-022).
 | Flow logs | Enabled, to CloudWatch |
 
 Outputs: `vpc_id`, `private_subnet_ids`, `intra_subnet_ids`, `public_subnet_ids`.
+
+**Files:** `main.tf` (the resources above), `variables.tf` and `outputs.tf` (the module's inputs and outputs), `versions.tf` (Terraform and provider version pins).

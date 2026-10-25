@@ -6,10 +6,10 @@ The AWS target, one folder per region. Only `eu-central-1/` is written. A US ten
 
 | Root (eu-central-1) | Creates | State key |
 |---|---|---|
-| `05-network/` | VPC across 3 AZs (`modules/aws/network`) | `eu-central-1/05-network.tfstate` |
-| `10-cluster/` | EKS + Karpenter IAM (`modules/aws/eks`) | `eu-central-1/10-cluster.tfstate` |
-| `20-data/` | Regional CMKs, plus one `modules/aws/stack-data` for **every stack whose `region` is eu-central-1** (env stacks + EU dedicated tenants), with backup replicas in eu-west-1 | `eu-central-1/20-data.tfstate` |
-| `30-gitops/` | Argo CD plus the root Application for `gitops/clusters/aws-eu-central-1` | `eu-central-1/30-gitops.tfstate` |
+| `eu-central-1/05-network/` | VPC across 3 AZs (`modules/aws/network`) | `eu-central-1/05-network.tfstate` |
+| `eu-central-1/10-cluster/` | EKS + Karpenter IAM (`modules/aws/eks`) | `eu-central-1/10-cluster.tfstate` |
+| `eu-central-1/20-data/` | Regional CMKs, plus one `modules/aws/stack-data` for **every stack whose `region` is eu-central-1** (env stacks + EU dedicated tenants), with backup replicas in eu-west-1 | `eu-central-1/20-data.tfstate` |
+| `eu-central-1/30-gitops/` | Argo CD plus the root Application for `gitops/clusters/aws-eu-central-1` | `eu-central-1/30-gitops.tfstate` |
 
 **Backend:** `backend "s3"` with `use_lockfile = true` and `encrypt = true`, configured partially. Each root is initialised with `terraform init -backend-config=bucket=<bootstrap output>`. Later roots read earlier ones through `terraform_remote_state` (input `state_bucket`).
 

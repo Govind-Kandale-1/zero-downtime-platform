@@ -6,3 +6,5 @@ See `infra/live/aws/code-review.md` for how the four roots fit together. This ro
 
 - `versions.tf`: AWS provider 6.70.0, the S3 backend (partial config, `use_lockfile`), default tags.
 - `main.tf`: `modules/aws/network` for `zdp-euc1`, `10.20.0.0/16`, 3 AZs, NAT per AZ. It outputs the VPC and subnet IDs for `10-cluster` and `20-data`.
+
+**Also:** `.terraform.lock.hcl`: the provider dependency lock (exact versions and checksums), committed so every run uses the same providers.

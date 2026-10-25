@@ -18,3 +18,5 @@
 **Limitations:** the static token Secret is a local-only shortcut. On AWS, ESO uses EKS Pod Identity and holds no credential.
 
 **Label:** RUN-LOCAL.
+
+**Also:** `versions.tf`, the Terraform and provider version pins.

@@ -6,3 +6,5 @@ See `infra/live/aws/code-review.md` for how the four roots fit together. This ro
 
 - `versions.tf`: AWS provider, S3 backend.
 - `main.tf`: reads `05-network` via remote state (input `state_bucket`), then runs `modules/aws/eks` (Kubernetes 1.34, private endpoint, Karpenter). It outputs the cluster name, endpoint, CA and node security group.
+
+**Also:** `.terraform.lock.hcl`: the provider dependency lock (exact versions and checksums), committed so every run uses the same providers.

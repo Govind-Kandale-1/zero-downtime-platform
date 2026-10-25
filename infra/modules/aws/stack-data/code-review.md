@@ -19,3 +19,5 @@
 - **Backup replication stays inside the residency zone.** It's driven by a provider alias the root chooses from the tenant's residency.
 
 **Not wired yet** (would be needed to run it): a TriggerAuthentication for KEDA's Redis scaler with TLS, because ElastiCache has in-transit encryption.
+
+**Files:** `main.tf` (the resources above), `variables.tf` and `outputs.tf` (the module's inputs and outputs), `versions.tf` (Terraform and provider version pins).

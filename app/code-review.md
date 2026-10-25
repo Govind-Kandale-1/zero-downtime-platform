@@ -41,3 +41,5 @@ Each folder has its own `code-review.md` with the detail.
 - `bash scripts/test-go.sh integration` (real Postgres 18 + Valkey 9 in Docker)
 
 **Label:** RUN-LOCAL (stand-in).
+
+**Also:** `go.sum`, the checksums of every module in `go.mod`, verified on each build.

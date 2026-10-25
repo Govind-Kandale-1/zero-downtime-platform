@@ -17,3 +17,5 @@
 **Limitations:** the node image digest is repeated here and in `config/versions.env`. Terraform can't read env files in a `module` block without a wrapper, and CI's validate job keeps the two honest.
 
 **Label:** RUN-LOCAL.
+
+**Also:** `.terraform.lock.hcl`: the provider dependency lock (exact versions and checksums), committed so every run uses the same providers.

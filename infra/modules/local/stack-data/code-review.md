@@ -10,6 +10,7 @@
 | `kubectl_manifest.pooler` | CNPG `Pooler pgbouncer` (Service `pgbouncer`): **transaction mode**, `max_client_conn=1000`, `default_pool_size=40`. |
 | `kubectl_manifest.valkey*` | Service `valkey` (6379 plus 9121 metrics) and a 1-replica StatefulSet. It runs with **AOF on** (`--appendonly yes`) and RDB off, a 1 Gi PVC, `maxmemory` with **`noeviction`**, and a `redis_exporter` sidecar exporting `LLEN jobs` (`REDIS_EXPORTER_CHECK_KEYS=jobs`). Non-root, read-only capabilities, RuntimeDefault seccomp. |
 | `vault_kv_secret_v2.app` | `secret/stacks/<stack>/app`: `DATABASE_URL` (via PgBouncer), `MIGRATION_DATABASE_URL` (direct `-pg-rw`), `REDIS_URL`. |
+| `kubernetes_persistent_volume_claim_v1.pg_backups` | PVC **`pg-backups`** (1 Gi, `wait_until_bound = false`) that the chart's backup CronJob and PreSync job mount. It's provider-layer infrastructure because Argo CD runs PreSync hooks before ordinary resources exist, and a hook-owned PVC would be deleted, backups and all, before every sync (Task 16). |
 
 **Size presets** (requests / limits):
 
@@ -31,3 +32,5 @@
 - The Valkey metrics port is scraped by a ServiceMonitor that ships with the app chart. ServiceMonitor CRDs belong to the platform layer, which is installed later.
 
 **Label:** RUN-LOCAL.
+
+**Files:** `main.tf` (the resources above), `variables.tf` and `outputs.tf` (the module's inputs and outputs), `versions.tf` (Terraform and provider version pins).

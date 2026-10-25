@@ -99,7 +99,7 @@ Reactive scaling has to add capacity *before* the load reaches current capacity.
 
 **The fix, designed but not applied** (ADR-013 third revision, roadmap):
 1. **Shorten the reaction time:** `rate(...[30s])`, a 5 s scrape and KEDA poll for the scaling metrics. That brings it to about 35–40 s.
-2. **Size the target for the ramp, not only for steady state:** `rpsPerPod` ≈ 80 (about 45–50% of C) and `inflightPerPod` 3.5. Prod at peak then needs about 30 API pods instead of about 18–21. On AWS that is about 4.5 vCPU more *while the peak lasts* (one more `m7i.xlarge`, about $0.25/hour on demand), at most about $185/month even if peak capacity ran around the clock (`docs/cost.md`).
+2. **Size the target for the ramp, not only for steady state:** `rpsPerPod` ≈ 80 (about 45–50% of C) and `inflightPerPod` 3.5. Prod at peak then needs about 30 API pods instead of about 18–21. On AWS that is about 4.5 vCPU more *while the peak lasts* (one more `m7i.xlarge` at $0.2415/hour on demand), at most $176/month even if peak capacity ran around the clock (`docs/cost.md`).
 3. **For peaks known in advance** (campaigns, launches): KEDA `cron` pre-scaling, which removes the reaction time altogether.
 
 These are stack values, except the rate window. The decision to stop at analysis was the owner's: the laptop runs would only re-confirm the arithmetic.

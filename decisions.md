@@ -445,7 +445,7 @@ Date · Status · Label
 - **Restore drill: `scripts/restore-test.sh <ns>`.** It takes a fresh backup with the stack's own CronJob, creates a **throwaway CNPG cluster** in the same namespace, runs `pg_restore` from the backup volume, recomputes the count and md5, and prints `RESTORE PASS rows=… md5=… rto_seconds=…`. It never touches the live database.
 - **Valkey (the queue):** AOF persistence (`everysec`), so a crash loses at most about 1 s of enqueues. It isn't dumped: queue contents are in-flight work, not records. On AWS, ElastiCache Multi-AZ with 7 daily snapshots.
 - **AWS (NOT RUN):**
-  - RDS **automated backups with point-in-time restore, 14 days**, Multi-AZ, deletion protection, and a final snapshot on delete.
+  - RDS **automated backups with point-in-time restore, 14 days**, replicated to `eu-west-1` (same residency zone), Multi-AZ, deletion protection, and a final snapshot on delete.
   - The pre-sync restore point is a manual RDS snapshot, or simply a PITR timestamp: the sync time from Argo CD history.
 
 **Rejected alternatives.**
@@ -456,7 +456,7 @@ Date · Status · Label
 **Consequences.**
 - **RPO, local:** at most 1 hour, or the time since the last deploy if that's shorter. **RPO, AWS:** about 5 minutes (PITR).
 - **RTO measured locally: about 45 s**, mostly creating the new instance (evidence 04). That's for the stand-in's 1,000 rows. Real RTO scales with data size: a logical restore of tens of GB, plus index builds, takes tens of minutes, and an RDS PITR to a new instance takes 10–30 minutes. One restore uses most of a 99.95% SLO's monthly error budget (21.9 min). That's why restore is the last resort and fix-forward the default (ADR-018).
-- **Same failure domain, locally:** the dumps live on the same laptop disk as the database. On AWS the backups are in a separate service. **Cross-region copies** inside the EU (AWS Backup copy to `eu-west-1` for EU tenants) are on the roadmap, not written.
+- **Same failure domain, locally:** the dumps live on the same laptop disk as the database. On AWS the backups are in a separate service, and **cross-region replicas stay inside the EU**: `aws_db_instance_automated_backups_replication` copies each RDS instance's automated backups (PITR) to `eu-west-1` under a CMK in that region (`infra/modules/aws/stack-data`, NOT RUN).
 - **Known gap:** `.counts` is computed in a separate transaction just after the dump. With concurrent writes it can differ from the dump's snapshot. The stand-in's `items` table is read-only, so this holds today. For the real app: `pg_dump --snapshot` on an exported snapshot, and the counts taken inside that same snapshot.
 - The drill runs by hand today. **Scheduling it weekly** (a CronJob or a CI job, alerting on `RESTORE FAIL`) is on the roadmap.
 
@@ -482,6 +482,13 @@ Date · Status · Label
 **Consequences.**
 - Locally, Prometheus keeps only 12 h, so the 3d windows compute over whatever data exists. The design is correct, but the local data is truncated (labelled).
 - Synthetic traffic is included in the local SLIs, since it is almost all the traffic there is. Production would split it out using Traefik's `synthetic` header label.
+
+**Revised 2026-10-26: latency gets its own objective, and causes get alerts.**
+- The latency burn-rate alerts had reused the availability objective (99.9%), which in effect demanded **p99.9** < 400 ms. The brief asks for **p95** < 400 ms, i.e. at least 95% of requests within 400 ms. Latency now uses `slo.latencyObjective: 0.95` (a 5% budget), and availability keeps 99.9 / 99.95.
+- Two **cause alerts** back the runbooks that had no alert behind them:
+  - `ZdpQueueBacklog` (page): oldest job > 300 s for 5 min.
+  - `ZdpDbPoolWaiting` (ticket, local only): PgBouncer max wait ≥ 1 s for 5 min.
+- They are deliberately not budget-based: they point at the broken part early, and the burn-rate alerts still page when users feel it. `docs/slos.md` has the full alert table.
 
 ## ADR-017: A dedicated tenant gets its own namespace and data services on a shared regional cluster
 

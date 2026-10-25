@@ -16,3 +16,5 @@
 **Verify:** `terraform -chdir=infra/live/local/20-data plan -detailed-exitcode` exits 0 (no drift), then run the contract test.
 
 **Label:** RUN-LOCAL.
+
+**Also:** `versions.tf` (Terraform and provider pins, and the `pg` backend). `.terraform.lock.hcl`: the provider dependency lock (exact versions and checksums), committed so every run uses the same providers.

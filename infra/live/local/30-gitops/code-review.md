@@ -16,3 +16,5 @@
 **Verify:** `kubectl -n argocd get application root -o jsonpath='{.status.sync.status}'` prints `Synced`, at the same revision as `git rev-parse origin/main`.
 
 **Label:** RUN-LOCAL.
+
+**Also:** `versions.tf` (Terraform and provider pins, and the `pg` backend). `.terraform.lock.hcl`: the provider dependency lock (exact versions and checksums), committed so every run uses the same providers.

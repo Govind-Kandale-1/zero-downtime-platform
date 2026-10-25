@@ -16,3 +16,5 @@
 - A permissions boundary rather than an SCP: SCPs need AWS Organizations, which a single account may not have. The same JSON works as an SCP in an organisation.
 
 **Verify:** `terraform -chdir=infra/bootstrap/aws init -backend=false && terraform validate` succeeds; Trivy finds 0 HIGH/CRITICAL (`evidence/08-aws-static/`).
+
+**Also:** `.terraform.lock.hcl`: the provider dependency lock (exact versions and checksums), committed so every run uses the same providers.
