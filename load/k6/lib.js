@@ -36,7 +36,11 @@ export function summarize(data, metricNames) {
     if (m.type === 'trend') {
       lines.push(`${name}: avg=${fmt(v.avg)}ms p(90)=${fmt(v['p(90)'])}ms p(95)=${fmt(v['p(95)'])}ms max=${fmt(v.max)}ms`);
     } else if (m.type === 'rate') {
-      lines.push(`${name}: rate=${fmt(v.rate)} (passes=${v.passes}, fails=${v.fails})`);
+      // k6 Rate metrics count "passes" = true values; for http_req_failed a
+      // true value is a FAILED request, so label them explicitly.
+      lines.push(name.startsWith('http_req_failed')
+        ? `${name}: rate=${fmt(v.rate)} (failed=${v.passes}, ok=${v.fails})`
+        : `${name}: rate=${fmt(v.rate)} (true=${v.passes}, false=${v.fails})`);
     } else if (m.type === 'counter') {
       lines.push(`${name}: count=${v.count} rate=${fmt(v.rate)}/s`);
     }
