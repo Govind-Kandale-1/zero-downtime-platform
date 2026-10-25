@@ -80,7 +80,6 @@ spec:
             - /spec/weighted/services
         # Argo Rollouts rewrites the stable/canary Service selectors (an atomic
         # map, so it then owns the whole selector); fields it owns are its to set.
-        - group: ""
-          kind: Service
+        - kind: Service # core API group (an explicit group: "" is dropped by the API server and shows as drift)
           managedFieldsManagers:
             - rollouts-controller
