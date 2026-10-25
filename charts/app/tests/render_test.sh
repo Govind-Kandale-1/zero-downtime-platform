@@ -11,11 +11,13 @@ fails=0
 check() { # name, actual, expected
   if [ "$2" = "$3" ]; then echo "PASS: $1"; else echo "FAIL: $1 (got '$2', want '$3')"; fails=$((fails + 1)); fi
 }
-render() { helm template app "$chart" -f "$t/$1" --kube-version 1.34.0 --namespace "$2"; }
+render() { local f=$1 ns=$2; shift 2; helm template app "$chart" -f "$t/$f" "$@" --kube-version 1.34.0 --namespace "$ns"; }
 # yq prints "---" separators and blank lines for documents that do not match.
 q() { printf '%s\n' "$1" | tool_yq -N -r "$2" | sed '/^---$/d;/^$/d'; }
 
-prod=$(render values-prod.yaml app-prod)
+# Prod is rendered with its real stack file, so what prod actually runs
+# (e.g. the calibrated rpsPerPod 126) is what gets tested.
+prod=$(render values-prod.yaml app-prod -f "$(repo_root)/gitops/stacks/prod.yaml")
 check "api canary steps 10/25/50" \
   "$(q "$prod" 'select(.kind=="Rollout" and .metadata.name=="api") | [.spec.strategy.canary.steps[] | select(has("setWeight")) | .setWeight] | join(",")')" "10,25,50"
 check "api canary routes via Traefik weighted service" \
@@ -49,9 +51,14 @@ check "presync backup is an Argo CD PreSync hook" \
 check "both ScaledObjects target Rollouts" \
   "$(q "$prod" 'select(.kind=="ScaledObject") | .spec.scaleTargetRef.kind' | sort -u | tr '\n' ' ')" "Rollout "
 check "API ScaledObject scales on Traefik RPS per pod" \
-  "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="prometheus" and (.metadata.query | test("traefik_service_requests_total"))) | .metadata.threshold')" "70"
+  "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="api") | .spec.triggers[] | select(.type=="prometheus" and (.metadata.query | test("traefik_service_requests_total"))) | .metadata.threshold')" "126"
 check "worker ScaledObject scales on list length 5" \
   "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="worker") | .spec.triggers[0].metadata.listLength')" "5"
+# One way to find the queue on every provider: ESO derives QUEUE_ADDRESS
+# (host:port) from the contract's REDIS_URL, and KEDA reads it through a
+# TriggerAuthentication. A hard-coded valkey.<ns>.svc only exists locally.
+check "worker scaler reads the queue address from the stack secret"   "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="worker") | .spec.triggers[0].authenticationRef.name'),$(q "$prod" 'select(.kind=="TriggerAuthentication") | .spec.secretTargetRef[0].key'),$(q "$prod" 'select(.kind=="ExternalSecret") | .spec.target.template.data.QUEUE_ADDRESS' | grep -c 'REDIS_URL')" "worker-queue,QUEUE_ADDRESS,1"
+check "queue TLS follows queue.tls (ElastiCache needs it, local Valkey does not)"   "$(q "$prod" 'select(.kind=="ScaledObject" and .metadata.name=="worker") | .spec.triggers[0].metadata.enableTLS // "unset"'),$(q "$(render values-prod.yaml app-prod --set queue.tls=true)" 'select(.kind=="ScaledObject" and .metadata.name=="worker") | .spec.triggers[0].metadata.enableTLS')" "unset,true"
 # The CPU trigger is a safety net: it must fire AFTER the RPS trigger, not
 # before. The stand-in uses ~1.4 millicores per req/s (evidence/01), so the CPU
 # threshold (request x utilization) must cover 1.4 m x the highest RPS target
@@ -87,6 +94,13 @@ check "Rollouts leave replicas to KEDA" \
   "$(q "$prod" 'select(.kind=="Rollout") | .spec.replicas' | sort -u)" "null"
 
 tenant=$(render values-tenant.yaml tenant-acme)
+# AWS: a dedicated tenant's own tainted Karpenter NodePool, with its pods
+# pinned to it; workers can be sent to the spot pool. Nothing pinned by default.
+pool=$(render values-tenant.yaml tenant-acme --set nodePool.enabled=true)
+check "nodePool.enabled renders a tainted NodePool and pins the tenant's pods to it"   "$(q "$pool" 'select(.kind=="NodePool") | .metadata.name + "/" + .spec.template.spec.taints[0].value'),$(q "$pool" 'select(.kind=="Rollout") | .spec.template.spec.nodeSelector["zdp/tenant"]' | sort -u),$(q "$pool" 'select(.kind=="Rollout") | .spec.template.spec.tolerations[0].value' | sort -u)" "tenant-acme/acme,acme,acme"
+check "no node pinning unless asked"   "$(q "$tenant" 'select(.kind=="NodePool") | .metadata.name' | wc -l | tr -d ' '),$(q "$tenant" 'select(.kind=="Rollout") | .spec.template.spec | has("nodeSelector")' | sort -u)" "0,false"
+spot=$(render values-prod.yaml app-prod --set 'worker.nodeSelector.zdp/pool=workers-spot' --set-json 'worker.tolerations=[{"key":"zdp/spot","operator":"Equal","value":"true","effect":"NoSchedule"}]')
+check "worker scheduling values reach the worker only"   "$(q "$spot" 'select(.kind=="Rollout" and .metadata.name=="worker") | .spec.template.spec.nodeSelector["zdp/pool"]'),$(q "$spot" 'select(.kind=="Rollout" and .metadata.name=="api") | .spec.template.spec | has("tolerations")')" "workers-spot,false"
 check "99.95 SLO renders availability objective 0.9995" \
   "$(q "$tenant" 'select(.kind=="PrometheusRule") | .spec.groups[].rules[] | select(.alert=="ZdpErrorBudgetBurnPage" and .labels.sli=="availability") | .labels.objective')" "0.9995"
 # The brief's latency target is p95 < 400 ms, i.e. at least 95% of requests

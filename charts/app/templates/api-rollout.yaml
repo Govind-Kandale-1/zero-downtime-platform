@@ -32,6 +32,7 @@ spec:
           labelSelector:
             matchLabels:
               {{- include "app.selector" (dict "component" "api" "root" .) | nindent 14 }}
+      {{- include "app.scheduling" (dict "component" "api" "root" .) | nindent 6 }}
       containers:
         - name: api
           image: {{ include "app.image" . }}

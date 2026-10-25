@@ -31,8 +31,24 @@ app.kubernetes.io/instance: {{ .root.Values.stack.name }}
 {{- end -}}
 {{- end -}}
 
-{{- define "app.queueAddress" -}}
-{{- default (printf "valkey.%s.svc:6379" .Values.stack.namespace) .Values.queue.address -}}
+{{/* nodeSelector + tolerations for one component ("api" | "worker"); with
+     nodePool.enabled both are pinned to the stack's own tainted pool. */}}
+{{- define "app.scheduling" -}}
+{{- $c := index .root.Values .component -}}
+{{- $sel := deepCopy ($c.nodeSelector | default dict) -}}
+{{- $tol := $c.tolerations | default list -}}
+{{- if .root.Values.nodePool.enabled -}}
+{{- $_ := set $sel "zdp/tenant" .root.Values.stack.name -}}
+{{- $tol = append $tol (dict "key" "zdp/tenant" "operator" "Equal" "value" .root.Values.stack.name "effect" "NoSchedule") -}}
+{{- end -}}
+{{- with $sel }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with $tol }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end -}}
 
 {{/* "99.95" -> 0.9995 ; error budget = 1 - objective */}}

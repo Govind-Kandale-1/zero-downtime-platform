@@ -34,6 +34,7 @@ spec:
           labelSelector:
             matchLabels:
               {{- include "app.selector" (dict "component" "worker" "root" .) | nindent 14 }}
+      {{- include "app.scheduling" (dict "component" "worker" "root" .) | nindent 6 }}
       containers:
         - name: worker
           image: {{ include "app.image" . }}

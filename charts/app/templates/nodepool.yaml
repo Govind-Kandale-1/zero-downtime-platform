@@ -1,0 +1,28 @@
+{{- if .Values.nodePool.enabled }}
+# AWS (Karpenter) only: this stack's own node pool, tainted so only its pods
+# (pinned by app.scheduling) can run there - compute isolation for a dedicated
+# tenant (ADR-017). Cluster-scoped; Argo CD prunes it with the tenant.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ printf "tenant-%s" .Values.stack.name }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  template:
+    metadata:
+      labels: { zdp/tenant: {{ .Values.stack.name }} }
+    spec:
+      nodeClassRef: { group: karpenter.k8s.aws, kind: EC2NodeClass, name: default }
+      taints:
+        - { key: zdp/tenant, value: {{ .Values.stack.name }}, effect: NoSchedule }
+      requirements:
+        - { key: karpenter.sh/capacity-type, operator: In, values: [on-demand] }
+        - { key: karpenter.k8s.aws/instance-category, operator: In, values: [c, m] }
+        - { key: karpenter.k8s.aws/instance-generation, operator: Gt, values: ["6"] }
+  limits:
+    cpu: {{ .Values.nodePool.limitsCpu | quote }}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 5m
+{{- end }}

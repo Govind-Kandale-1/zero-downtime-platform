@@ -25,6 +25,9 @@
 | `analysis.*` | success ≥ 99%, p95 ≤ 0.4 s, ≥ 20 requests/min | Matches the brief's p95 target; below the minimum count the result is *inconclusive*, never a pass |
 | `backup.mode` | `pgdump` | Local CNPG. `managed` means RDS automated backups + PITR on AWS |
 | `slo.latencyObjective` | 0.95 | The latency SLO: ≥ 95% of requests within 400 ms (the brief's p95). Availability uses `stack.slo` |
+| `queue.address` / `queue.tls` | "" / false | Default: KEDA reads `QUEUE_ADDRESS` from the stack secret (every provider); `tls: true` for ElastiCache |
+| `nodePool.enabled` / `limitsCpu` | false / 32 | AWS: render a tainted Karpenter pool for this stack and pin its pods to it (dedicated tenants) |
+| `api/worker.nodeSelector`, `tolerations` | {} / [] | Per-component scheduling, e.g. workers on the spot pool on AWS |
 | `alerts.queueAgeSeconds` | 300 | `ZdpQueueBacklog` threshold: 5× the longest job; the gate's limit is 120 s |
 | `backup.timeoutSeconds` | 900 | A hung backup job fails instead of blocking later runs |
 | `dbMetrics` | true | Scrape the CloudNativePG Postgres + PgBouncer exporters (local only; `false` on AWS) |
@@ -34,7 +37,7 @@
 - The stack Application must ignore drift on `TraefikService` weights (`ignoreDifferences`). Otherwise Argo CD self-heal would reset the weights Argo Rollouts sets mid-canary.
 
 **Verify:**
-- `bash charts/app/tests/render_test.sh`: 35 checks.
+- `bash charts/app/tests/render_test.sh`: 40 checks.
 - `helm lint charts/app -f charts/app/tests/values-prod.yaml --kube-version 1.34.0`.
 
 **Label:** RUN-LOCAL (stand-in).

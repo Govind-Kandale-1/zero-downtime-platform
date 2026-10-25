@@ -32,7 +32,7 @@ sizes:
 api:
   minReplicas: 3              # one per zone for availability
   maxReplicas: 40
-  rpsPerPod: 70               # placeholder until calibrated: 70% of measured per-pod capacity
+  rpsPerPod: 126              # 70% of the measured per-pod capacity C ~ 180 req/s (docs/capacity.md)
   # CPU is a safety-net trigger: it must fire AFTER the RPS trigger and before
   # saturation, never first. Measured (evidence/01): ~1.4 millicores per req/s,
   # with no fixed per-pod cost. 200m at 100% fires at ~143 req/s per pod, which
@@ -51,6 +51,8 @@ api:
   preStopSleepSeconds: 5
   maxInflight: 8              # stand-in capacity model
   workLatencyMs: 40
+  nodeSelector: {}
+  tolerations: []
 
 worker:
   minReplicas: 2
@@ -59,6 +61,8 @@ worker:
   canarySteps: [25, 50]
   pauseSeconds: 180
   terminationGracePeriodSeconds: 90   # > 60 s longest job
+  nodeSelector: {}            # AWS: workers can go to the spot pool (gitops/clusters/aws-*)
+  tolerations: []
 
 analysis:
   interval: 1m
@@ -82,7 +86,18 @@ ingress:
   hosts: []                   # default: <stack.name>.localtest.me
 
 queue:
-  address: ""                 # default: valkey.<namespace>.svc:6379
+  # Where KEDA finds the queue. Default: QUEUE_ADDRESS from the stack secret,
+  # which ESO derives from the contract's REDIS_URL - the same on every
+  # provider. Set address only to override it.
+  address: ""
+  tls: false                  # true for ElastiCache (rediss://)
+
+# AWS (Karpenter) only: a dedicated, tainted node pool for this stack, with the
+# api and worker pods pinned to it - compute isolation for dedicated tenants
+# (ADR-017), rendered from the tenant file like everything else.
+nodePool:
+  enabled: false
+  limitsCpu: 32
 
 prometheus:
   url: http://kube-prometheus-stack-prometheus.monitoring.svc:9090

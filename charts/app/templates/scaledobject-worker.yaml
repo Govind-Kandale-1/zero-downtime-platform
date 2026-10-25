@@ -37,7 +37,32 @@ spec:
               periodSeconds: 60
   triggers:
     - type: redis
+      {{- if not .Values.queue.address }}
+      authenticationRef:
+        name: worker-queue
+      {{- end }}
       metadata:
-        address: {{ include "app.queueAddress" . }}
+        {{- with .Values.queue.address }}
+        address: {{ . }}
+        {{- end }}
+        {{- if .Values.queue.tls }}
+        enableTLS: "true"
+        {{- end }}
         listName: jobs
         listLength: {{ .Values.worker.listLength | quote }}
+{{- if not .Values.queue.address }}
+---
+# The queue's host:port, from the stack secret (QUEUE_ADDRESS, derived by the
+# ExternalSecret from REDIS_URL): the same lookup on every provider.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: worker-queue
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: address
+      name: app-env
+      key: QUEUE_ADDRESS
+{{- end }}
