@@ -9,3 +9,14 @@ stack:
   region: eu-central-1
   size: tiny
   slo: "99.9"
+
+# --- app values (charts/app) ---
+# Non-prod: one API/worker pod is enough; short canary pauses for fast feedback.
+api:
+  minReplicas: 1
+  maxReplicas: 3
+  pauseSeconds: 60
+worker:
+  minReplicas: 1
+  maxReplicas: 5
+  pauseSeconds: 60

@@ -1,0 +1,78 @@
+# One Application per dedicated tenant (tenants/*.yaml with tier: dedicated),
+# pinned to its ring's release file. Same chart as the env stacks; values come
+# from the tenant file itself, so onboarding is one file in one PR.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: tenants-dedicated
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+              revision: main
+              files:
+                - path: tenants/*.yaml
+              selector:
+                matchLabels:
+                  tier: dedicated
+          - git:
+              repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+              revision: main
+              pathParamPrefix: release
+              files:
+                - path: "gitops/releases/ring{{.ring}}.yaml"
+  template:
+    metadata:
+      name: "stack-{{.name}}"
+      labels:
+        zdp/stage: "ring{{.ring}}"
+        zdp/tier: dedicated
+        zdp/tenant: "{{.name}}"
+    spec:
+      project: default
+      source:
+        repoURL: ghcr.io/govind-kandale-1/charts
+        chart: app
+        targetRevision: "{{.chart.version}}"
+        helm:
+          releaseName: app
+          valuesObject:
+            stack:
+              name: "{{.name}}"
+              namespace: "tenant-{{.name}}"
+              tier: dedicated
+              release: "ring{{.ring}}"
+              residency: "{{.residency}}"
+              region: "{{.region}}"
+              size: "{{.size}}"
+              slo: "{{.slo}}"
+            image:
+              repository: "{{.image.repository}}"
+              digest: "{{.image.digest}}"
+            # Local laptop caps (labelled); production uses chart defaults.
+            api: { pauseSeconds: 60, maxReplicas: 10 }
+            worker: { pauseSeconds: 60, maxReplicas: 20 }
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "tenant-{{.name}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true
+          - RespectIgnoreDifferences=true
+      ignoreDifferences:
+        - group: traefik.io
+          kind: TraefikService
+          jsonPointers:
+            - /spec/weighted/services

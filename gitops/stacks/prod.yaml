@@ -10,3 +10,15 @@ stack:
   region: eu-central-1
   size: small
   slo: "99.9"
+
+# --- app values (charts/app) ---
+# Shared prod stack: HA minimum of 3 API pods. maxReplicas are laptop caps
+# (labelled); api.rpsPerPod is recalibrated from the load test.
+api:
+  minReplicas: 3
+  maxReplicas: 40
+  pauseSeconds: 60
+worker:
+  minReplicas: 2
+  maxReplicas: 60
+  pauseSeconds: 60

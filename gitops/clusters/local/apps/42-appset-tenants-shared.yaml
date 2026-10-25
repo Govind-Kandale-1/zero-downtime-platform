@@ -1,0 +1,51 @@
+# One Application per shared tenant (tenants/*.yaml with tier: shared): a host
+# route + SLO rules on the shared prod stack. No app release of its own - the
+# tenant rides the shared stack's (ring 0) rollouts.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: tenants-shared
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  generators:
+    - git:
+        repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+        revision: main
+        files:
+          - path: tenants/*.yaml
+        selector:
+          matchLabels:
+            tier: shared
+  template:
+    metadata:
+      name: "tenant-{{.name}}"
+      labels:
+        zdp/tier: shared
+        zdp/tenant: "{{.name}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Govind-Kandale-1/zero-downtime-platform.git
+        targetRevision: main
+        path: charts/tenant-route
+        helm:
+          releaseName: "tenant-{{.name}}"
+          valuesObject:
+            tenant:
+              name: "{{.name}}"
+              slo: "{{.slo}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: app-prod
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true
