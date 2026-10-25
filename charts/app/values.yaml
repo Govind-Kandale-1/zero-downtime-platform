@@ -63,7 +63,7 @@ backup:
   mode: pgdump                # pgdump (local CNPG) | managed (RDS automated backups + PITR)
   schedule: "0 * * * *"
   retain: 24
-  storage: 1Gi
+  claimName: pg-backups # created by the provider layer (Terraform), not by this chart
   image: postgres:18.6-alpine
 
 ingress:

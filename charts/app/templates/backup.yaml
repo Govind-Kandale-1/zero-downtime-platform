@@ -5,26 +5,13 @@ dumps the database before every sync, so a bad migration can be rolled back by
 restore. Each dump gets a .counts file (row count + md5 over the rows) that the
 restore test compares against. On AWS (backup.mode: managed) RDS automated
 backups + point-in-time recovery replace all of this.
+
+The claim "pg-backups" (backup.claimName) is created by the provider layer
+(infra/modules/local/stack-data), like the database itself. The chart must not
+own it: Argo CD runs PreSync hooks before ordinary resources exist, and a hook
+claim would be deleted before every sync by the default BeforeHookCreation
+policy - taking the backups with it.
 */ -}}
-# The PreSync backup Job mounts this claim, and hooks run before ordinary
-# resources are created - so on a first install the claim must itself be a
-# PreSync hook with a lower weight, or the Job pod waits forever (Pending).
-# No hook-delete-policy: the claim (and the dumps on it) persist across syncs.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: backups
-  labels:
-    {{- include "app.labels" . | nindent 4 }}
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-weight: "-1"
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: {{ .Values.backup.storage }}
----
 apiVersion: batch/v1
 kind: CronJob
 metadata:

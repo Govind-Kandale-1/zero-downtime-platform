@@ -53,7 +53,7 @@ containers:
 volumes:
   - name: backups
     persistentVolumeClaim:
-      claimName: backups
+      claimName: {{ .root.Values.backup.claimName }}
   - name: tmp
     emptyDir: {}
 {{- end }}

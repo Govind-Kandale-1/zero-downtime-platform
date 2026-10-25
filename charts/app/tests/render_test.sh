@@ -28,8 +28,15 @@ check "worker terminationGracePeriodSeconds 90" \
   "$(q "$prod" 'select(.kind=="Rollout" and .metadata.name=="worker") | .spec.template.spec.terminationGracePeriodSeconds')" "90"
 check "presync backup secret is optional" \
   "$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .spec.template.spec.containers[0].envFrom[0].secretRef.optional')" "true"
-check "backup PVC is created first on install (PreSync hook, weight below the job)" \
-  "$(q "$prod" 'select(.kind=="PersistentVolumeClaim" and .metadata.name=="backups") | .metadata.annotations["argocd.argoproj.io/hook"] + "/" + .metadata.annotations["argocd.argoproj.io/hook-weight"]')" "PreSync/-1"
+# Backup storage is provider-layer infrastructure (Terraform creates PVC
+# "pg-backups" before Argo CD syncs). The chart must not own it: as a plain
+# resource it does not exist when the PreSync hook first runs, and as a hook
+# Argo CD's default BeforeHookCreation policy would delete it - and the
+# backups on it - before every sync.
+check "chart does not own the backup PVC (provider layer does)" \
+  "$(q "$prod" 'select(.kind=="PersistentVolumeClaim") | .metadata.name' | wc -l | tr -d ' ')" "0"
+check "backup jobs mount the provider-layer claim" \
+  "$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .spec.template.spec.volumes[] | select(.name=="backups") | .persistentVolumeClaim.claimName')" "pg-backups"
 check "presync backup is an Argo CD PreSync hook" \
   "$(q "$prod" 'select(.kind=="Job" and .metadata.name=="presync-backup") | .metadata.annotations["argocd.argoproj.io/hook"]')" "PreSync"
 check "both ScaledObjects target Rollouts" \

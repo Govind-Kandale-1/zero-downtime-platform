@@ -38,6 +38,31 @@ resource "helm_release" "openbao" {
   })]
 }
 
+# Grafana's admin credentials, created once here so the Helm chart never
+# renders its own: an in-chart random password changes on every render, which
+# Argo CD sees as drift, syncs, and rolls Grafana in a loop.
+resource "kubernetes_namespace_v1" "monitoring" {
+  metadata {
+    name = "monitoring"
+  }
+}
+
+resource "random_password" "grafana_admin" {
+  length  = 24
+  special = false
+}
+
+resource "kubernetes_secret_v1" "grafana_admin" {
+  metadata {
+    name      = "grafana-admin"
+    namespace = kubernetes_namespace_v1.monitoring.metadata[0].name
+  }
+  data = {
+    admin-user     = "admin"
+    admin-password = random_password.grafana_admin.result
+  }
+}
+
 # The token External Secrets Operator uses to read OpenBao (ClusterSecretStore
 # platform-secrets, created by the platform layer). On AWS this is replaced by
 # EKS Pod Identity: no static credential at all.

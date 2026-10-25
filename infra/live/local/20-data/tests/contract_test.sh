@@ -36,6 +36,12 @@ for s in "${stacks[@]}"; do
     fail "$s: pgbouncer not available after 120s"
   fi
 
+  if kubectl get pvc pg-backups -n "$ns" >/dev/null 2>&1; then
+    pass "$s: backup claim pg-backups exists (provider layer)"
+  else
+    fail "$s: backup claim pg-backups missing"
+  fi
+
   if kubectl wait pod/valkey-0 -n "$ns" --for=condition=Ready --timeout=5s >/dev/null 2>&1; then
     pass "$s: valkey ready"
     aof=$(kubectl exec -n "$ns" valkey-0 -c valkey -- valkey-cli CONFIG GET appendonly | tail -1)

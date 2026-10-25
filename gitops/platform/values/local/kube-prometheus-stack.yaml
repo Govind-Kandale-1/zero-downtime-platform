@@ -48,8 +48,13 @@ alertmanager:
       - name: "null"
 
 grafana:
-  # Local only (bound to 127.0.0.1): anonymous read access so dashboards open
-  # without a password; the admin login keeps the chart default.
+  # Admin credentials come from Secret grafana-admin (Terraform, data-operators):
+  # a chart-generated random password would change on every render and make
+  # Argo CD re-sync and roll Grafana forever. Anonymous Viewer for local use.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
   grafana.ini:
     auth.anonymous:
       enabled: true

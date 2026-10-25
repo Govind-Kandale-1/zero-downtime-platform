@@ -175,6 +175,23 @@ resource "kubectl_manifest" "valkey" {
   depends_on = [kubectl_manifest.valkey_service]
 }
 
+# Backup storage for the chart's pg_dump CronJob and PreSync hook. It lives in
+# the provider layer (like the database) so it exists before Argo CD's first
+# sync and survives every sync; on AWS, RDS automated backups replace it.
+resource "kubernetes_persistent_volume_claim_v1" "backups" {
+  metadata {
+    name      = "pg-backups"
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+  }
+  spec {
+    access_modes = ["ReadWriteOnce"]
+    resources {
+      requests = { storage = "1Gi" }
+    }
+  }
+  wait_until_bound = false # local-path binds on first consumer
+}
+
 # Contract item 3: the app reads these three keys via External Secrets.
 resource "vault_kv_secret_v2" "app" {
   mount = "secret"
