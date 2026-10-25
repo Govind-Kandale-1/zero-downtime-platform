@@ -12,11 +12,13 @@ stack:
   slo: "99.9"
 
 # --- app values (charts/app) ---
-# Shared prod stack: HA minimum of 3 API pods. maxReplicas are laptop caps
-# (labelled); api.rpsPerPod is recalibrated from the load test.
+# Shared prod stack. Autoscaling target from the measured per-pod capacity
+# (docs/capacity.md): C ~ 180 req/s at p95 < 400 ms, target = 0.7 x C = 126,
+# max = ceil(2250 / 126) + 3 (canary + headroom) = 21. Worker max is a laptop cap.
 api:
   minReplicas: 3
-  maxReplicas: 40
+  maxReplicas: 21
+  rpsPerPod: 126
   pauseSeconds: 60
 worker:
   minReplicas: 2
