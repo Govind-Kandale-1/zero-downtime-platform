@@ -8,7 +8,7 @@ Wraps `terraform-aws-modules/eks` 21.29.0 and its `karpenter` submodule (ADR-022
 |---|---|
 | API endpoint | **Private only.** CI never talks to the cluster (GitOps pulls), and Terraform runs from inside the VPC. |
 | Node group `system` | 2–3 × `m7i.large`, labelled `zdp/pool=system`. It holds CoreDNS, Karpenter, Argo CD and the other controllers. |
-| Add-ons | CoreDNS, kube-proxy, vpc-cni, **EKS Pod Identity agent** (credentials for ESO, Karpenter and the EBS CSI driver without IRSA annotations), EBS CSI driver |
+| Add-ons | CoreDNS, kube-proxy, vpc-cni **with its network-policy agent enabled** (otherwise EKS accepts NetworkPolicy objects but enforces none, and the chart's default-deny would be void), **EKS Pod Identity agent** (credentials for ESO, Karpenter and the EBS CSI driver without IRSA annotations), EBS CSI driver |
 | Karpenter | IAM role, SQS interruption queue and Pod Identity association. NodePools are platform manifests (`gitops/platform/aws/karpenter.yaml`). |
 | Access | `enable_cluster_creator_admin_permissions`; secrets envelope-encrypted with the module's KMS key |
 
@@ -17,3 +17,5 @@ Wraps `terraform-aws-modules/eks` 21.29.0 and its `karpenter` submodule (ADR-022
 - **Pod Identity instead of IRSA:** there's no OIDC trust policy per service account to maintain, and the associations are managed in Terraform.
 
 **Accepted finding:** `AWS-0104` (the node security group allows all egress, a module default). Nodes need to reach GHCR, AWS APIs, Sigstore and GitHub. The reason is recorded in `.trivyignore.yaml`; VPC endpoints and an egress allow-list are on the roadmap.
+
+**Files:** `main.tf` (the resources above), `variables.tf` and `outputs.tf` (the module's inputs and outputs), `versions.tf` (Terraform and provider version pins).

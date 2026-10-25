@@ -1,0 +1,7 @@
+# NetworkPolicy enforcement check, 2026-10-25T18:38:45Z (RUN-LOCAL)
+# A pod in namespace default calls prod's API directly (only Traefik may), then Prometheus (no policy) as a control.
+kubectl -n default run np-test --image=busybox:1.37 --restart=Never --command -- sh -c 'wget -T 4 -qO- http://api-stable.app-prod.svc:80/healthz && echo REACHED || echo BLOCKED; wget -T 4 -qO- http://kube-prometheus-stack-prometheus.monitoring.svc:9090/-/ready >/dev/null && echo "control: prometheus reachable" || echo "control: prometheus blocked"'
+
+wget: download timed out
+BLOCKED
+control: prometheus reachable

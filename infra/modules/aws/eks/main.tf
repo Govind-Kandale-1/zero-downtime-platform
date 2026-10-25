@@ -20,9 +20,16 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
 
   addons = {
-    coredns                = {}
-    kube-proxy             = {}
-    vpc-cni                = { before_compute = true }
+    coredns    = {}
+    kube-proxy = {}
+    # enableNetworkPolicy starts the VPC CNI's policy agent: without it EKS
+    # accepts NetworkPolicy objects but enforces nothing, and the chart's
+    # default-deny would be silently void (enforcement is verified locally:
+    # evidence/00-bringup/networkpolicy-check.txt).
+    vpc-cni = {
+      before_compute       = true
+      configuration_values = jsonencode({ enableNetworkPolicy = "true" })
+    }
     eks-pod-identity-agent = { before_compute = true }
     aws-ebs-csi-driver     = {}
   }

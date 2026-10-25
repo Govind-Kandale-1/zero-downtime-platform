@@ -6,6 +6,8 @@
 
 `down-purge.log` shows the start state: the kind cluster, the Terraform state DB and its volume, and the local state files all deleted.
 
+`networkpolicy-check.txt` (added 2026-10-26): a pod in an unrelated namespace can't reach prod's API directly (only Traefik may), while Prometheus, which has no policy, stays reachable. kindnet enforces the chart's default-deny.
+
 `up.log` shows the bring-up (the Argo CD password is redacted):
 
 | Step | Time |
